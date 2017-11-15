@@ -8,6 +8,11 @@ from pyscf.nao.m_tddft_iter_gpu import tddft_iter_gpu_c
 from pyscf.nao.m_chi0_noxv import chi0_mv_gpu, chi0_mv
 from pyscf.nao.m_blas_wrapper import spmv_wrapper
 
+try:
+    import pyscalapack
+except:
+    raise ValueError("pyscalapack must be installed to used mpi version of nao")
+
 import scipy
 if int(scipy.__version__[0]) > 0:
     scipy_ver = 1
@@ -22,7 +27,7 @@ except:
     use_numba = False
 
 
-class tddft_iter(scf):
+class tddft_iter_mpi(scf):
   """ 
     Iterative TDDFT a la PK, DF, OC JCTC 
   """
