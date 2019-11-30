@@ -2,15 +2,26 @@ from __future__ import print_function, division
 import sys, numpy as np
 from copy import copy
 from pyscf.nao.m_pack2den import pack2den_u, pack2den_l
-from pyscf.nao.m_rf0_den import rf0_den, rf0_cmplx_ref_blk, rf0_cmplx_ref, rf0_cmplx_vertex_dp, rf0_cmplx_vertex_ac
+from pyscf.nao.m_rf0_den import rf0_den, rf0_den_numba, rf0_cmplx_ref_blk, rf0_cmplx_ref, rf0_cmplx_vertex_dp
+from pyscf.nao.m_rf0_den import rf0_cmplx_vertex_ac, si_correlation, si_correlation_numba
 from pyscf.nao.m_rf_den import rf_den
 from pyscf.nao.m_rf_den_pyscf import rf_den_pyscf
 from pyscf.data.nist import HARTREE2EV
 from pyscf.nao.m_valence import get_str_fin
 from timeit import default_timer as timer
 from numpy import stack, dot, zeros, einsum, pi, log, array, require
+import scipy.sparse as sparse
 from pyscf.nao import scf
 import time
+
+try:
+  import numba as nb
+  use_numba = True
+except:
+  use_numba = False
+
+def __LINE__():
+      return sys._getframe(1).f_lineno
 
 start_time = time.time()
 class gw(scf):
@@ -73,7 +84,8 @@ class gw(scf):
     else: 
         self.start_st = self.nocc_0t-self.nocc
         self.finish_st = self.nocc_0t+self.nvrt
-    if self.verbosity>0: print(__name__,'\t\t====> Indices of states to be corrected start from {} to {} \n'.format(self.start_st,self.finish_st))
+    if self.verbosity>0:
+      print(__name__,'\t\t====> Indices of states to be corrected start from {} to {} \n'.format(self.start_st,self.finish_st))
     self.nn = [range(self.start_st[s], self.finish_st[s]) for s in range(self.nspin)] # list of states
     
 
@@ -83,14 +95,20 @@ class gw(scf):
     else :
       self.nocc_conv = self.nocc
 
+    if self.verbosity>0:
+      print(__name__, __LINE__())
     if 'nvrt_conv' in kw:
       s2nvrt_conv = [kw['nvrt_conv']] if type(kw['nvrt_conv'])==int else kw['nvrt_conv']
       self.nvrt_conv = array([min(i,j) for i,j in zip(s2nvrt_conv,self.norbs-nocc_0t)])
     else :
       self.nvrt_conv = self.nvrt
     
-    if self.rescf: self.kernel_scf() # here is rescf with HF functional tacitly assumed
+    print(__name__, __LINE__())
+    
+    if self.rescf:
+      self.kernel_scf() # here is rescf with HF functional tacitly assumed
         
+    print(__name__, __LINE__())
     self.nff_ia = kw['nff_ia'] if 'nff_ia' in kw else 32    #number of grid points
     self.tol_ia = kw['tol_ia'] if 'tol_ia' in kw else 1e-10
     (wmin_def,wmax_def,tmin_def,tmax_def) = self.get_wmin_wmax_tmax_ia_def(self.tol_ia)
@@ -102,6 +120,7 @@ class gw(scf):
     #print('self.tmin_ia, self.tmax_ia, self.wmax_ia')
     #print(self.tmin_ia, self.tmax_ia, self.wmax_ia)
     #print(self.ww_ia[0], self.ww_ia[-1])
+    print(__name__, __LINE__())
 
     self.dw_ia = self.ww_ia*(log(self.ww_ia[-1])-log(self.ww_ia[0]))/(len(self.ww_ia)-1)
     self.dw_excl = self.ww_ia[0]
@@ -114,6 +133,7 @@ class gw(scf):
 
     if self.perform_gw: self.kernel_gw()
     self.snmw2sf_ncalls = 0
+    print(__name__, __LINE__())
     
   def get_h0_vh_x_expval(self):
     """
@@ -168,17 +188,21 @@ class gw(scf):
     from numpy.linalg import solve
     """ 
     This computes the correlation part of the screened interaction W_c
-    by solving <self.nprod> linear equations (1-K chi0) W = K chi0 K or v_{ind}\sim W_{c} = (1-v\chi_{0})^{-1}v\chi_{0}v
+    by solving <self.nprod> linear equations (1-K chi0) W = K chi0 K 
+    or v_{ind}\sim W_{c} = (1-v\chi_{0})^{-1}v\chi_{0}v
     scr_inter[w,p,q], where w in ww, p and q in 0..self.nprod 
     """
-    rf0 = si0 = self.rf0(ww)
-    for iw,w in enumerate(ww):                   #devide ww into complex(w) which is along imaginary axis (real=0) and grid index(iw)             
-      k_c = np.dot(self.kernel_sq, rf0[iw,:,:])     #kernel_sq or hkernel_den is bare coloumb or hartree, rf0
-                                                 #is \chi_{0}, so here k_c=v*chi_{0}
-      b = np.dot(k_c, self.kernel_sq)               #here v\chi_{0}v or k_c*v
-      k_c = np.eye(self.nprod)-k_c               #here (1-v\chi_{0}) or 1-k_c. 1=eye(nprod) 
-      si0[iw,:,:] = solve(k_c, b)                # k_c * W = v\chi_{0}v = b --> W = np.linalg.solve(K_c,b)
-      #np.allclose(np.dot(k_c, si0), b) == True  #Test 
+
+    if not hasattr(self, 'pab2v_den'):
+      self.pab2v_den = einsum('pab->apb', self.pb.get_ac_vertex_array())
+
+    si0 = np.zeros((ww.size, self.nprod, self.nprod), dtype=self.dtypeComplex)
+    if use_numba:
+        si_correlation_numba(si0, ww, self.x, self.kernel_sq, self.ksn2f, self.ksn2e,
+                             self.pab2v_den, self.nprod, self.norbs, self.bsize,
+                             self.nspin, self.nfermi, self.vstart)
+    else:
+        si_correlation(rf0(self, ww), si0, ww, self.kernel_sq, self.nprod)
     return si0
 
   def si_c_via_diagrpa(self, ww):
@@ -271,22 +295,29 @@ class gw(scf):
     return sn2int
 
   def gw_corr_res(self, sn2w):
-    """This computes a residue part of the GW correction at energies sn2w[spin,len(self.nn)]"""
+    """
+    This computes a residue part of the GW correction at energies sn2w[spin,len(self.nn)]
+    """
     v_pab = self.pb.get_ac_vertex_array()
     sn2res = [np.zeros_like(n2w, dtype=self.dtype) for n2w in sn2w ]
+    
     for s,ww in enumerate(sn2w):    #split into spin and energies
       x = self.mo_coeff[0,s,:,:,0]
-      for nl,(n,w) in enumerate(zip(self.nn[s],ww)):   #split into nl=counter, n=number of energy level and relevant w=mo_energy inside gw.nn 
+        
+      # split into nl=counter, n=number of energy level and relevant w=mo_energy inside gw.nn 
+      for nl,(n,w) in enumerate(zip(self.nn[s], ww)):
         lsos = self.lsofs_inside_contour(self.ksn2e[0,s,:],w,self.dw_excl)  #gives G's poles in n level with w energy
         zww = array([pole[0] for pole in lsos]) #pole[0]=energies pole[1]=state in gw.nn and pole[2]=occupation number
         #print(__name__, s,n,w, 'len lsos', len(lsos))
         si_ww = self.si_c(ww=zww) #send pole's frequency to calculate W
         xv = np.dot(v_pab,x[n])
+        
         for pole,si in zip(lsos, si_ww.real):
           xvx = np.dot(xv, x[pole[1]]) #XVX for x=n v= ac produvt and x=states of poles
           contr = np.dot(xvx, np.dot(si, xvx))
           #print(pole[0], pole[2], contr)
           sn2res[s][nl] += pole[2]*contr
+    
     return sn2res
 
   def lsofs_inside_contour(self, ee, w, eps):
