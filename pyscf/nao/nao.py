@@ -132,6 +132,7 @@ class nao():
     self.nspin = 1 if gto.spin==0 else 2 # this can be wrong and has to be redetermined at in the mean-field class (mf)
     self.label = kw['label'] if 'label' in kw else 'pyscf'
     self.mol=gto # Only some data must be copied, not the whole object. Otherwise, an eventual deepcopy(...) may fail.
+    self.elements = self.mol.elements
     self.natm=self.natoms = gto.natm
     a2s = [gto.atom_symbol(ia) for ia in range(gto.natm) ]
     self.sp2symbol = sorted(list(set(a2s)))
@@ -177,6 +178,7 @@ class nao():
     self.label = kw['label'] if 'label' in kw else 'pyscf'
     atom = kw['xyz_list']
     atom2charge = [atm[0] for atm in atom]
+    self.elements = [chemical_symbols[atm[0]] for atm in atom]
     self.atom2coord = np.array([atm[1] for atm in atom])
     self.sp2charge = list(set(atom2charge))
     self.sp2symbol = [chemical_symbols[z] for z in self.sp2charge]
@@ -388,6 +390,8 @@ class nao():
     self.atom2sp = np.empty((self.natm), dtype=np.int64)
     for o,atom in enumerate(self.wfsx.orb2atm):
       self.atom2sp[atom-1] = strspecie2sp[self.wfsx.orb2strspecie[o]]
+
+    self.elements = [self.sp2ion[sp]['symbol'].strip() for sp in self.atom2sp]
 
     self.atom2s = np.zeros((self.natm+1), dtype=np.int64)
     for atom,sp in enumerate(self.atom2sp):
