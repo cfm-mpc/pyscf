@@ -2,26 +2,15 @@ from __future__ import print_function, division
 import sys, numpy as np
 from copy import copy
 from pyscf.nao.m_pack2den import pack2den_u, pack2den_l
-from pyscf.nao.m_rf0_den import rf0_den, rf0_den_numba, rf0_cmplx_ref_blk, rf0_cmplx_ref, rf0_cmplx_vertex_dp
-from pyscf.nao.m_rf0_den import rf0_cmplx_vertex_ac, si_correlation, si_correlation_numba
+from pyscf.nao.m_rf0_den import rf0_den, rf0_cmplx_ref_blk, rf0_cmplx_ref, rf0_cmplx_vertex_dp, rf0_cmplx_vertex_ac
 from pyscf.nao.m_rf_den import rf_den
 from pyscf.nao.m_rf_den_pyscf import rf_den_pyscf
 from pyscf.data.nist import HARTREE2EV
 from pyscf.nao.m_valence import get_str_fin
 from timeit import default_timer as timer
 from numpy import stack, dot, zeros, einsum, pi, log, array, require
-import scipy.sparse as sparse
 from pyscf.nao import scf
 import time
-
-try:
-  import numba as nb
-  use_numba = True
-except:
-  use_numba = False
-
-def __LINE__():
-      return sys._getframe(1).f_lineno
 
 start_time = time.time()
 class gw(scf):
@@ -32,7 +21,7 @@ class gw(scf):
     """ Constructor G0W0 class """
     # how to exclude from the input the dtype and xc_code ?
     scf.__init__(self, **kw)
-    print(__name__, ' dtype ', self.dtype)
+    #print(__name__, ' dtype ', self.dtype)
 
     self.xc_code_scf = copy(self.xc_code)
     self.niter_max_ev = kw['niter_max_ev'] if 'niter_max_ev' in kw else 15
@@ -42,25 +31,13 @@ class gw(scf):
     self.bsize = kw['bsize'] if 'bsize' in kw else min(40, self.norbs)
     self.tdscf = kw['tdscf'] if 'tdscf' in kw else None
     self.frozen_core = kw['frozen_core'] if 'frozen_core' in kw else None
-    self.write_w = kw['write_w'] if 'write_w' in kw else False
-    self.restart_w = kw['restart_w'] if 'restart_w' in kw else False
-    if sum(self.nelec) == 1:
-      raise RuntimeError('Not implemented H, sorry :-) Look into scf/__init__.py for HF1e class...')
+    if sum(self.nelec) == 1: raise RuntimeError('Not implemented H, sorry :-) Look into scf/__init__.py for HF1e class...')
     
-    if self.nspin==1:
-        self.nocc_0t = nocc_0t = np.array([int((self.nelec+1)/2)])
-    elif self.nspin==2:
-        self.nocc_0t = nocc_0t = self.nelec
-    else:
-        raise RuntimeError('nspin>2?')
+    if self.nspin==1: self.nocc_0t = nocc_0t = np.array([int((self.nelec+1)/2)])
+    elif self.nspin==2: self.nocc_0t = nocc_0t = self.nelec
+    else: raise RuntimeError('nspin>2?')
 
-    if self.verbosity>0:
-        mess = """====> Number of:
-    * occupied states = {},
-    * states up to fermi level= {},
-    * nspin = {}, 
-    * magnetization = {}""".format(nocc_0t,self.nfermi,self.nspin,self.spin)
-        print(__name__, mess)
+    if self.verbosity>0: print(__name__,'\t\t====> Number of occupied states = {}, states up to fermi level= {}, nspin = {}, and magnetization = {}'.format(nocc_0t,self.nfermi,self.nspin,self.spin))
 
     if 'nocc' in kw:
       s2nocc = [kw['nocc']] if type(kw['nocc'])==int else kw['nocc']
@@ -84,8 +61,7 @@ class gw(scf):
     else: 
         self.start_st = self.nocc_0t-self.nocc
         self.finish_st = self.nocc_0t+self.nvrt
-    if self.verbosity>0:
-      print(__name__,'\t\t====> Indices of states to be corrected start from {} to {} \n'.format(self.start_st,self.finish_st))
+    if self.verbosity>0: print(__name__,'\t\t====> Indices of states to be corrected start from {} to {} \n'.format(self.start_st,self.finish_st))
     self.nn = [range(self.start_st[s], self.finish_st[s]) for s in range(self.nspin)] # list of states
     
 
@@ -95,20 +71,14 @@ class gw(scf):
     else :
       self.nocc_conv = self.nocc
 
-    if self.verbosity>0:
-      print(__name__, __LINE__())
     if 'nvrt_conv' in kw:
       s2nvrt_conv = [kw['nvrt_conv']] if type(kw['nvrt_conv'])==int else kw['nvrt_conv']
       self.nvrt_conv = array([min(i,j) for i,j in zip(s2nvrt_conv,self.norbs-nocc_0t)])
     else :
       self.nvrt_conv = self.nvrt
     
-    print(__name__, __LINE__())
-    
-    if self.rescf:
-      self.kernel_scf() # here is rescf with HF functional tacitly assumed
+    if self.rescf: self.kernel_scf() # here is rescf with HF functional tacitly assumed
         
-    print(__name__, __LINE__())
     self.nff_ia = kw['nff_ia'] if 'nff_ia' in kw else 32    #number of grid points
     self.tol_ia = kw['tol_ia'] if 'tol_ia' in kw else 1e-10
     (wmin_def,wmax_def,tmin_def,tmax_def) = self.get_wmin_wmax_tmax_ia_def(self.tol_ia)
@@ -120,7 +90,6 @@ class gw(scf):
     #print('self.tmin_ia, self.tmax_ia, self.wmax_ia')
     #print(self.tmin_ia, self.tmax_ia, self.wmax_ia)
     #print(self.ww_ia[0], self.ww_ia[-1])
-    print(__name__, __LINE__())
 
     self.dw_ia = self.ww_ia*(log(self.ww_ia[-1])-log(self.ww_ia[0]))/(len(self.ww_ia)-1)
     self.dw_excl = self.ww_ia[0]
@@ -133,7 +102,6 @@ class gw(scf):
 
     if self.perform_gw: self.kernel_gw()
     self.snmw2sf_ncalls = 0
-    print(__name__, __LINE__())
     
   def get_h0_vh_x_expval(self):
     """
@@ -188,21 +156,17 @@ class gw(scf):
     from numpy.linalg import solve
     """ 
     This computes the correlation part of the screened interaction W_c
-    by solving <self.nprod> linear equations (1-K chi0) W = K chi0 K 
-    or v_{ind}\sim W_{c} = (1-v\chi_{0})^{-1}v\chi_{0}v
+    by solving <self.nprod> linear equations (1-K chi0) W = K chi0 K or v_{ind}\sim W_{c} = (1-v\chi_{0})^{-1}v\chi_{0}v
     scr_inter[w,p,q], where w in ww, p and q in 0..self.nprod 
     """
-
-    if not hasattr(self, 'pab2v_den'):
-      self.pab2v_den = einsum('pab->apb', self.pb.get_ac_vertex_array())
-
-    si0 = np.zeros((ww.size, self.nprod, self.nprod), dtype=self.dtypeComplex)
-    if use_numba:
-        si_correlation_numba(si0, ww, self.x, self.kernel_sq, self.ksn2f, self.ksn2e,
-                             self.pab2v_den, self.nprod, self.norbs, self.bsize,
-                             self.nspin, self.nfermi, self.vstart)
-    else:
-        si_correlation(rf0(self, ww), si0, ww, self.kernel_sq, self.nprod)
+    rf0 = si0 = self.rf0(ww)
+    for iw,w in enumerate(ww):                   #devide ww into complex(w) which is along imaginary axis (real=0) and grid index(iw)             
+      k_c = np.dot(self.kernel_sq, rf0[iw,:,:])     #kernel_sq or hkernel_den is bare coloumb or hartree, rf0
+                                                 #is \chi_{0}, so here k_c=v*chi_{0}
+      b = np.dot(k_c, self.kernel_sq)               #here v\chi_{0}v or k_c*v
+      k_c = np.eye(self.nprod)-k_c               #here (1-v\chi_{0}) or 1-k_c. 1=eye(nprod) 
+      si0[iw,:,:] = solve(k_c, b)                # k_c * W = v\chi_{0}v = b --> W = np.linalg.solve(K_c,b)
+      #np.allclose(np.dot(k_c, si0), b) == True  #Test 
     return si0
 
   def si_c_via_diagrpa(self, ww):
@@ -225,7 +189,7 @@ class gw(scf):
       epsilon[iw,:,:] = np.eye(self.nprod)- np.dot(self.kernel_sq, rf0[iw,:,:])
     return epsilon
 
-  def get_snmw2sf(self, optimize="greedy"):
+  def get_snmw2sf(self):
     """ 
     This computes a matrix elements of W_c: <\Psi\Psi | W_c |\Psi\Psi>.
     sf[spin,n,m,w] = X^n V_mu X^m W_mu_nu X^n V_nu X^m,
@@ -238,28 +202,15 @@ class gw(scf):
     for s in range(self.nspin):
       nmw2sf = zeros((len(self.nn[s]), self.norbs, self.nff_ia), dtype=self.dtype)
       #nmw2sf = zeros((len(self.nn), self.norbs, self.nff_ia), dtype=self.dtype)
-
-      # n runs from s...f or states will be corrected:
-      # self.nn = [range(self.start_st[s], self.finish_st[s])
-      xna = self.mo_coeff[0,s,self.nn[s],:,0]
+      xna = self.mo_coeff[0,s,self.nn[s],:,0]                                           #n runs from s...f or states will be corrected: self.nn = [range(self.start_st[s], self.finish_st[s])
       #xna = self.mo_coeff[0,s,self.nn,:,0]
-
-      # m runs from 0...norbs
-      xmb = self.mo_coeff[0,s,:,:,0]
-
-      # This calculates nmp2xvx= X^n V_mu X^m for each side
-      nmp2xvx = einsum('na,pab,mb->nmp', xna, v_pab, xmb, optimize=optimize)
+      xmb = self.mo_coeff[0,s,:,:,0]                                                    #m runs from 0...norbs
+      nmp2xvx = einsum('na,pab,mb->nmp', xna, v_pab, xmb)                               #This calculates nmp2xvx= X^n V_mu X^m for each side
       for iw,si0 in enumerate(wpq2si0):
-        # This calculates nmp2xvx(outer loop)*real.W_mu_nu*nmp2xvx 
-        nmw2sf[:,:,iw] = einsum('nmp,pq,nmq->nm', nmp2xvx, si0, nmp2xvx, optimize=optimize)
-      
+        nmw2sf[:,:,iw] = einsum('nmp,pq,nmq->nm', nmp2xvx, si0, nmp2xvx)                #This calculates nmp2xvx(outer loop)*real.W_mu_nu*nmp2xvx 
       snmw2sf.append(nmw2sf)
-
-      if self.write_w:
-        from pyscf.nao.m_restart import write_rst_h5py
-        print(write_rst_h5py(data = snmw2sf, filename= 'SCREENED_COULOMB.hdf5'))
-    
     return snmw2sf
+
 
   def gw_corr_int(self, sn2w, eps=None):
     """
@@ -267,57 +218,38 @@ class gw(scf):
     -\frac{1}{2\pi}\int_{-\infty}^{+\infty } \sum_m \frac{I^{nm}(i\omega{'})}{E_n + i\omega{'}-E_m^0} d\omega{'}
     see eq (16) within DOI: 10.1021/acs.jctc.9b00436
     """
-
-    if not hasattr(self, 'snmw2sf'):
-      if self.restart_w is True:
-        from pyscf.nao.m_restart import read_rst_h5py
-        self.snmw2sf, msg = read_rst_h5py()
-        print(msg)
-      else:
-        self.snmw2sf = self.get_snmw2sf()
+    if not hasattr(self, 'snmw2sf'): self.snmw2sf = self.get_snmw2sf()
 
     sn2int = [np.zeros_like(n2w, dtype=self.dtype) for n2w in sn2w ]
     eps = self.dw_excl if eps is None else eps
 
-    # split into mo_energies
-    for s,ww in enumerate(sn2w):
-      # split mo_energies into each spin channel
-      for n,w in enumerate(ww):
+    for s,ww in enumerate(sn2w):            #split into mo_energies
+      for n,w in enumerate(ww):             #split mo_energies into each spin channel
         #print(__name__, 's,n,w int corr', s,n,w)
-        # runs over orbitals
-        for m in range(self.norbs):
+        for m in range(self.norbs):         #runs over orbitals
           if abs(w-self.ksn2e[0,s,m])<eps : continue
-          state_corr = ((self.dw_ia*self.snmw2sf[s][n,m,:] / \
-              (w + 1j*self.ww_ia-self.ksn2e[0,s,m])).sum()/pi).real
+          state_corr = ((self.dw_ia*self.snmw2sf[s][n,m,:] / (w + 1j*self.ww_ia-self.ksn2e[0,s,m])).sum()/pi).real
           #print(n, m, -state_corr, w-self.ksn2e[0,s,m])
           sn2int[s][n] -= state_corr
-
     return sn2int
 
   def gw_corr_res(self, sn2w):
-    """
-    This computes a residue part of the GW correction at energies sn2w[spin,len(self.nn)]
-    """
+    """This computes a residue part of the GW correction at energies sn2w[spin,len(self.nn)]"""
     v_pab = self.pb.get_ac_vertex_array()
     sn2res = [np.zeros_like(n2w, dtype=self.dtype) for n2w in sn2w ]
-    
     for s,ww in enumerate(sn2w):    #split into spin and energies
       x = self.mo_coeff[0,s,:,:,0]
-        
-      # split into nl=counter, n=number of energy level and relevant w=mo_energy inside gw.nn 
-      for nl,(n,w) in enumerate(zip(self.nn[s], ww)):
+      for nl,(n,w) in enumerate(zip(self.nn[s],ww)):   #split into nl=counter, n=number of energy level and relevant w=mo_energy inside gw.nn 
         lsos = self.lsofs_inside_contour(self.ksn2e[0,s,:],w,self.dw_excl)  #gives G's poles in n level with w energy
         zww = array([pole[0] for pole in lsos]) #pole[0]=energies pole[1]=state in gw.nn and pole[2]=occupation number
         #print(__name__, s,n,w, 'len lsos', len(lsos))
         si_ww = self.si_c(ww=zww) #send pole's frequency to calculate W
         xv = np.dot(v_pab,x[n])
-        
         for pole,si in zip(lsos, si_ww.real):
           xvx = np.dot(xv, x[pole[1]]) #XVX for x=n v= ac produvt and x=states of poles
           contr = np.dot(xvx, np.dot(si, xvx))
           #print(pole[0], pole[2], contr)
           sn2res[s][nl] += pole[2]*contr
-    
     return sn2res
 
   def lsofs_inside_contour(self, ee, w, eps):
@@ -376,17 +308,11 @@ class gw(scf):
       self.nn_conv.append( range(max(nocc_0t-nocc_conv,0), min(nocc_0t+nvrt_conv,self.norbs)))
 
     # iterations to converge the 
-    if self.verbosity>0:
-      mess = """
-        '='*48' G0W0 corrections of eigenvalues  '='*48
-        MAXIMUM number of iterations (Input file): {}
-        and number of grid points: {}
-        Number of GW correction at energies calculated by integral part: {}
-        and by sigma part: {}
-        GW corection for eigenvalues STARTED:
-        """.format(self.niter_max_ev, self.nff_ia, np.size(self.gw_corr_int(sn2eval_gw)),
-                   np.size(self.gw_corr_int(sn2eval_gw)))
-
+    if self.verbosity>0: 
+        print('-'*48,'|  G0W0 corrections of eigenvalues  |','-'*48+'\n')
+        print('MAXIMUM number of iterations (Input file): {} and number of grid points: {}'.format(self.niter_max_ev,self.nff_ia))
+        print('Number of GW correction at energies calculated by integral part: {} and by sigma part: {}\n'.format(np.size(self.gw_corr_int(sn2eval_gw)), np.size(self.gw_corr_int(sn2eval_gw))))
+        print('GW corection for eigenvalues STARTED:\n')    
     for i in range(self.niter_max_ev):
       sn2i = self.gw_corr_int(sn2eval_gw)
       sn2r = self.gw_corr_res(sn2eval_gw)
