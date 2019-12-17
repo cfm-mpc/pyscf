@@ -41,6 +41,9 @@ class gw_iter(gw):
     self.maxiter = kw['maxiter'] if 'maxiter' in kw else 1000
 
     self.h0_vh_x_expval = self.get_h0_vh_x_expval()
+    self.ncall_gw_chi0_mv = 0
+    self.gw_chi0_mv_time = np.zeros((17), dtype=np.float64)
+    self.gw_chi0_mv_time_all = np.zeros((17), dtype=np.float64)
 
   def si_c2(self,ww):
     """
@@ -238,25 +241,44 @@ class gw_iter(gw):
         for iw, w in enumerate(ww):
             self.comega_current = w
 
+            self.ncall_gw_chi0_mv = 0
+            ncalls = 0
+            niterations = len(self.nn[s])*self.norbs
             print("freq: ", iw, "nn = {}; norbs = {}".format(len(self.nn[s]), self.norbs))
+            self.gw_chi0_mv_time.fill(0.0)
             t1 = timer()
             #print('k_c_opt',k_c_opt.shape)
             for n in range(len(self.nn[s])):    
                 for m in range(self.norbs):
+
                     # v XVX
                     a = np.dot(self.kernel_sq, xvx[s][n,m,:])
+                    
                     # \chi_{0}v XVX by using matrix vector
                     b = self.gw_chi0_mv(a, self.comega_current)
+                    
                     # v\chi_{0}v XVX, this should be equals to bxvx in last approach
                     a = np.dot(self.kernel_sq, b)
+                    ncall_bef = self.ncall_gw_chi0_mv
                     sf_aux[n,m,:],exitCode = lgmres(k_c_opt, a,
                                                      atol=self.gw_iter_tol,
                                                      maxiter=self.maxiter)
+                    ncalls += self.ncall_gw_chi0_mv - ncall_bef
+
                     if exitCode != 0:
                       print("LGMRES has not achieved convergence: exitCode = {}".format(exitCode))
             # I= XVX I_aux
             t2 = timer()
             print("time for lgmres loop: ", t2-t1)
+            print("ncalls iterations: ", ncalls, "total calls: ", self.ncall_gw_chi0_mv)
+            print("Average lgmres iteration for convergence: ", ncalls/niterations)
+            print("detailed time gw_chi0_mv:")
+
+            for it, chi0_time in enumerate(self.gw_chi0_mv_time):
+                print(it, chi0_time)
+
+                self.gw_chi0_mv_time_all[it] += chi0_time
+
             inm[:,:,iw]=np.einsum('nmp,nmp->nm',xvx[s], sf_aux, optimize=optimize)
         snm2i.append(np.real(inm))
 
@@ -288,31 +310,82 @@ class gw_iter(gw):
   def gw_chi0_mv(self,dvin, comega=1j*0.0, dnout=None):
 
     from scipy.linalg import blas
-    from pyscf.nao.m_sparsetools import csr_matvec    
-    
+    import pyscf.nao.m_blas as m_blas
+    from pyscf.nao.m_sparsetools import csr_matvec, csc_matvec
+
+    self.ncall_gw_chi0_mv += 1
     if dnout is None:
         dnout = np.zeros_like(dvin, dtype=self.dtypeComplex)
 
     dnout.fill(0.0)
 
-    vdp = csr_matvec(self.cc_da, dvin.real)  # real part
-    sab_real = (vdp*self.v_dab).reshape((self.norbs,self.norbs))
+    #t1 = timer()
+    #vdp = csr_matvec(self.cc_da, dvin.real)  # real part
+    #vcc = self.v_dab.T.dot(self.cc_da)
+    #t2 = timer()
+    #self.gw_chi0_mv_time[0] += t2 - t1
+    
+    #
+    #do n = 1, aux%nloop
+    #  si = aux%si(n, :); fi = aux%fi(n, :);
+    #  do j = lbound(aux%Vertex_array(n)%array, 2), ubound(aux%Vertex_array(n)%array, 2)
+    #  do i = lbound(aux%Vertex_array(n)%array, 1), ubound(aux%Vertex_array(n)%array, 1)
+    #    VV(si(1)+i-1, si(2)+j-1) = sum(aux%Vertex_array(n)%array(i, j, :)*vKS_re(si(3):fi(3)))
+    #  enddo
+    #  enddo
+    #enddo
 
-    vdp = csr_matvec(self.cc_da, dvin.imag)  # imaginary
-    sab_imag = (vdp*self.v_dab).reshape((self.norbs, self.norbs))
+    t1 = timer()
+    # self.v_dab CSR matrix
+    #sab_real_ref = self.v_dab.T.dot(vdp).reshape((self.norbs,self.norbs))
+    #sab_real = self.vcc.dot(dvin.real).reshape((self.norbs,self.norbs))
+    sab_real = m_blas.gemv(1.0, self.vcc, dvin.real).reshape((self.norbs, self.norbs))
+    #sab_real = m_blas.matvec(self.vcc, dvin.real).reshape((self.norbs, self.norbs))
+    #csc_matvec(self.v_dab, vdp).reshape((self.norbs,self.norbs))
+    t2 = timer()
+    self.gw_chi0_mv_time[1] += t2 - t1
+
+    #t1 = timer()
+    #vdp = csr_matvec(self.cc_da, dvin.imag)  # imaginary
+    #t2 = timer()
+    #self.gw_chi0_mv_time[2] += t2 - t1
+
+    t1 = timer()
+    #sab_imag_ref = self.v_dab.T.dot(vdp).reshape((self.norbs, self.norbs))
+    #sab_imag = self.vcc.dot(dvin.imag).reshape((self.norbs,self.norbs))
+    sab_imag = m_blas.gemv(1.0, self.vcc, dvin.imag).reshape((self.norbs, self.norbs))
+    #sab_imag = m_blas.matvec(self.vcc, dvin.imag).reshape((self.norbs, self.norbs))
+    #self.vcc.dot(dvin.imag).reshape((self.norbs, self.norbs))
+    t2 = timer()
+    self.gw_chi0_mv_time[3] += t2 - t1
 
     ab2v_re = np.zeros((self.norbs, self.norbs), dtype=self.dtype)
     ab2v_im = np.zeros((self.norbs, self.norbs), dtype=self.dtype)
 
     for s in range(self.nspin):
+        t1 = timer()
         nb2v = self.gemm(1.0, self.xocc[s], sab_real)
-        nm2v_re = self.gemm(1.0, nb2v, self.xvrt[s].T)
+        t2 = timer()
+        self.gw_chi0_mv_time[4] += t2 - t1
+        
+        t1 = timer()
+        nm2v_re = self.gemm(1.0, nb2v, self.xvrt[s], trans_b=1)
+        t2 = timer()
+        self.gw_chi0_mv_time[5] += t2 - t1
     
+        t1 = timer()
         nb2v = self.gemm(1.0, self.xocc[s], sab_imag)
-        nm2v_im = self.gemm(1.0, nb2v, self.xvrt[s].T)
+        t2 = timer()
+        self.gw_chi0_mv_time[6] += t2 - t1
+        
+        t1 = timer()
+        nm2v_im = self.gemm(1.0, nb2v, self.xvrt[s], trans_b=1)
+        t2 = timer()
+        self.gw_chi0_mv_time[7] += t2 - t1
 
         vs, nf = self.vstart[s], self.nfermi[s]
     
+        t1 = timer()
         if self.use_numba:
             self.div_numba(self.ksn2e[0,s], self.ksn2f[0,s], nf, vs, comega, nm2v_re, nm2v_im)
         else:
@@ -329,17 +402,59 @@ class gw_iter(gw):
                 for m in range(n-vs):  
                     nm2v_re[n,m],nm2v_im[n,m] = 0.0,0.0
 
+        t2 = timer()
+        self.gw_chi0_mv_time[8] += t2 - t1
+        
+        t1 = timer()
         nb2v = self.gemm(1.0, nm2v_re, self.xvrt[s]) # real part
-        ab2v_re = self.gemm(1.0, self.xocc[s].T, nb2v, 1.0, ab2v_re)
+        t2 = timer()
+        self.gw_chi0_mv_time[9] += t2 - t1
+        
+        t1 = timer()
+        ab2v_re = self.gemm(1.0, self.xocc[s], nb2v, 1.0, ab2v_re, trans_a=1)
+        t2 = timer()
+        self.gw_chi0_mv_time[10] += t2 - t1
 
+        
+        t1 = timer()
         nb2v = self.gemm(1.0, nm2v_im, self.xvrt[s]) # imag part
-        ab2v_im = self.gemm(1.0, self.xocc[s].T, nb2v, 1.0, ab2v_im)
-    
-    vdp = csr_matvec(self.v_dab, ab2v_re.reshape(self.norbs*self.norbs))
-    chi0_re = vdp*self.cc_da
+        t2 = timer()
+        self.gw_chi0_mv_time[11] += t2 - t1
 
-    vdp = csr_matvec(self.v_dab, ab2v_im.reshape(self.norbs*self.norbs))    
-    chi0_im = vdp*self.cc_da
+        t1 = timer()
+        ab2v_im = self.gemm(1.0, self.xocc[s], nb2v, 1.0, ab2v_im, trans_a=1)
+        t2 = timer()
+        self.gw_chi0_mv_time[12] += t2 - t1
+    
+
+    #t1 = timer()
+    #vdp = csr_matvec(self.v_dab, ab2v_re.reshape(self.norbs*self.norbs))
+    #t2 = timer()
+    #self.gw_chi0_mv_time[13] += t2 - t1
+
+    t1 = timer()
+    #chi0_re = self.ccv.dot(ab2v_re.reshape(self.norbs*self.norbs))
+    chi0_re = m_blas.gemv(1.0, self.vcc, ab2v_re.reshape(self.norbs*self.norbs),
+                          trans=1)
+    #chi0_re = self.vcc.T.dot(ab2v_re.reshape(self.norbs*self.norbs))[0, :]
+    #chi0_re = m_blas.matvec(self.vcc, ab2v_re.reshape(self.norbs*self.norbs),
+    #                        trans=True)
+    t2 = timer()
+    self.gw_chi0_mv_time[14] += t2 - t1
+
+    #t1 = timer()
+    #vdp = csr_matvec(self.v_dab, ab2v_im.reshape(self.norbs*self.norbs))
+    #t2 = timer()
+    #self.gw_chi0_mv_time[15] += t2 - t1
+
+    t1 = timer()
+    #chi0_im = self.ccv.dot(ab2v_im.reshape(self.norbs*self.norbs))
+    chi0_im = m_blas.gemv(1.0, self.vcc, ab2v_im.reshape(self.norbs*self.norbs),
+                          trans=1)
+    #chi0_im = m_blas.matvec(self.vcc, ab2v_im.reshape(self.norbs*self.norbs),
+    #                        trans=True)
+    t2 = timer()
+    self.gw_chi0_mv_time[16] += t2 - t1
 
     dnout = chi0_re + 1.0j*chi0_im
     return dnout
@@ -416,6 +531,9 @@ class gw_iter(gw):
     """
     This computes an integral part of the GW correction at GW class while uses get_snmw2sf_iter
     """
+
+    self.vcc = np.ascontiguousarray(self.v_dab.T.dot(self.cc_da).todense())
+    print("vcc: ", self.vcc.shape)
 
     if self.restart_w is True: 
       from pyscf.nao.m_restart import read_rst_h5py
