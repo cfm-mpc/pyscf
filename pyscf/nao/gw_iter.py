@@ -307,17 +307,13 @@ class gw_iter(gw):
     vcim = self.spmv(self.nprod, 1.0, self.kernel, daux)
     return vcre,vcim
 
-  def gw_chi0_mv(self,dvin, comega=1j*0.0, dnout=None):
+  def gw_chi0_mv(self, dvin, comega=1j*0.0):
 
     from scipy.linalg import blas
     import pyscf.nao.m_blas as m_blas
     from pyscf.nao.m_sparsetools import csr_matvec, csc_matvec
 
     self.ncall_gw_chi0_mv += 1
-    if dnout is None:
-        dnout = np.zeros_like(dvin, dtype=self.dtypeComplex)
-
-    dnout.fill(0.0)
 
     #t1 = timer()
     #vdp = csr_matvec(self.cc_da, dvin.real)  # real part
@@ -339,6 +335,9 @@ class gw_iter(gw):
     # self.v_dab CSR matrix
     #sab_real_ref = self.v_dab.T.dot(vdp).reshape((self.norbs,self.norbs))
     #sab_real = self.vcc.dot(dvin.real).reshape((self.norbs,self.norbs))
+
+    # this operation could be taken out from the matvec operation ....
+    # or not ??
     sab_real = m_blas.gemv(1.0, self.vcc, dvin.real).reshape((self.norbs, self.norbs))
     #sab_real = m_blas.matvec(self.vcc, dvin.real).reshape((self.norbs, self.norbs))
     #csc_matvec(self.v_dab, vdp).reshape((self.norbs,self.norbs))
@@ -456,8 +455,7 @@ class gw_iter(gw):
     t2 = timer()
     self.gw_chi0_mv_time[16] += t2 - t1
 
-    dnout = chi0_re + 1.0j*chi0_im
-    return dnout
+    return chi0_re + 1.0j*chi0_im
 
   def gw_comp_veff(self, vext, comega=1j*0.0):
     """
@@ -532,7 +530,9 @@ class gw_iter(gw):
     This computes an integral part of the GW correction at GW class while uses get_snmw2sf_iter
     """
 
-    self.vcc = np.ascontiguousarray(self.v_dab.T.dot(self.cc_da).todense())
+    #self.vcc = np.ascontiguousarray(self.v_dab.T.dot(self.cc_da).todense())
+    # use Fortran order to make blas scipy as fast than np.dot
+    self.vcc = np.asfortranarray(self.v_dab.T.dot(self.cc_da).todense())
     print("vcc: ", self.vcc.shape)
 
     if self.restart_w is True: 

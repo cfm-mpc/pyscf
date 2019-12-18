@@ -5,6 +5,10 @@ import numba as nb
 
 def gemv(alpha, A, x, trans=0):
 
+    #if trans == 0:
+    #    return alpha*A.dot(x)
+    #else:
+    #    return alpha*A.T.dot(x)
     if A.dtype == np.float32:
         return blas.sgemv(alpha, A, x, trans=trans)
     elif A.dtype == np.float64:
