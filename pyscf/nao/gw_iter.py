@@ -28,6 +28,31 @@ def profile(fnc):
         return retval
     return inner
 
+def test_para():
+
+  import pyscf.nao.m_blas as m_blas
+
+  N1 = 60000
+  N2 = 1000
+  A = np.asfortranarray(np.random.randn(N1, N2))
+  x = np.random.randn(N2)
+
+  print("start GEMV")
+  time = 0
+  Nite = 300
+  for i in range(Nite):
+    t1 = timer()
+    y = m_blas.gemv(1.0, A, x)
+    t2 = timer()
+    time += t2-t1
+
+  print("timing: ", time, time/Nite)
+
+  import sys
+  sys.exit()
+
+
+
 start_time = time.time()
 
 class gw_iter(gw):
@@ -36,6 +61,7 @@ class gw_iter(gw):
   """
 
   def __init__(self, **kw):
+
     gw.__init__(self, **kw)
     self.gw_iter_tol = kw['gw_iter_tol'] if 'gw_iter_tol' in kw else 1e-4
     self.maxiter = kw['maxiter'] if 'maxiter' in kw else 1000
@@ -315,48 +341,38 @@ class gw_iter(gw):
 
     self.ncall_gw_chi0_mv += 1
 
-    #t1 = timer()
-    #vdp = csr_matvec(self.cc_da, dvin.real)  # real part
-    #vcc = self.v_dab.T.dot(self.cc_da)
-    #t2 = timer()
-    #self.gw_chi0_mv_time[0] += t2 - t1
-    
-    #
-    #do n = 1, aux%nloop
-    #  si = aux%si(n, :); fi = aux%fi(n, :);
-    #  do j = lbound(aux%Vertex_array(n)%array, 2), ubound(aux%Vertex_array(n)%array, 2)
-    #  do i = lbound(aux%Vertex_array(n)%array, 1), ubound(aux%Vertex_array(n)%array, 1)
-    #    VV(si(1)+i-1, si(2)+j-1) = sum(aux%Vertex_array(n)%array(i, j, :)*vKS_re(si(3):fi(3)))
-    #  enddo
-    #  enddo
-    #enddo
+    # sparse
+    t1 = timer()
+    vdp = csr_matvec(self.cc_da, dvin.real) # real part
+    t2 = timer()
+    self.gw_chi0_mv_time[0] += t2 - t1
 
     t1 = timer()
-    # self.v_dab CSR matrix
-    #sab_real_ref = self.v_dab.T.dot(vdp).reshape((self.norbs,self.norbs))
-    #sab_real = self.vcc.dot(dvin.real).reshape((self.norbs,self.norbs))
-
-    # this operation could be taken out from the matvec operation ....
-    # or not ??
-    sab_real = m_blas.gemv(1.0, self.vcc, dvin.real).reshape((self.norbs, self.norbs))
-    #sab_real = m_blas.matvec(self.vcc, dvin.real).reshape((self.norbs, self.norbs))
-    #csc_matvec(self.v_dab, vdp).reshape((self.norbs,self.norbs))
+    sab_real = csr_matvec(self.v_dab_trans, vdp).reshape((self.norbs,self.norbs))
     t2 = timer()
     self.gw_chi0_mv_time[1] += t2 - t1
 
-    #t1 = timer()
-    #vdp = csr_matvec(self.cc_da, dvin.imag)  # imaginary
-    #t2 = timer()
-    #self.gw_chi0_mv_time[2] += t2 - t1
+    t1 = timer()
+    vdp = csr_matvec(self.cc_da, dvin.imag) # imaginary part
+    t2 = timer()
+    self.gw_chi0_mv_time[2] += t2 - t1
 
     t1 = timer()
-    #sab_imag_ref = self.v_dab.T.dot(vdp).reshape((self.norbs, self.norbs))
-    #sab_imag = self.vcc.dot(dvin.imag).reshape((self.norbs,self.norbs))
-    sab_imag = m_blas.gemv(1.0, self.vcc, dvin.imag).reshape((self.norbs, self.norbs))
-    #sab_imag = m_blas.matvec(self.vcc, dvin.imag).reshape((self.norbs, self.norbs))
-    #self.vcc.dot(dvin.imag).reshape((self.norbs, self.norbs))
+    #sab_imag = self.v_dab.T.dot(vdp).reshape((self.norbs,self.norbs))
+    sab_imag = csr_matvec(self.v_dab_trans, vdp).reshape((self.norbs,self.norbs))
     t2 = timer()
     self.gw_chi0_mv_time[3] += t2 - t1
+
+    # dense
+    #t1 = timer()
+    #sab_real = m_blas.gemv(1.0, self.vcc, dvin.real).reshape((self.norbs, self.norbs))
+    #t2 = timer()
+    #self.gw_chi0_mv_time[1] += t2 - t1
+
+    #t1 = timer()
+    #sab_imag = m_blas.gemv(1.0, self.vcc, dvin.imag).reshape((self.norbs, self.norbs))
+    #t2 = timer()
+    #self.gw_chi0_mv_time[3] += t2 - t1
 
     ab2v_re = np.zeros((self.norbs, self.norbs), dtype=self.dtype)
     ab2v_im = np.zeros((self.norbs, self.norbs), dtype=self.dtype)
@@ -426,34 +442,42 @@ class gw_iter(gw):
         self.gw_chi0_mv_time[12] += t2 - t1
     
 
-    #t1 = timer()
-    #vdp = csr_matvec(self.v_dab, ab2v_re.reshape(self.norbs*self.norbs))
-    #t2 = timer()
-    #self.gw_chi0_mv_time[13] += t2 - t1
+    # sparse
+    # Real part
+    t1 = timer()
+    vdp = csr_matvec(self.v_dab, ab2v_re.reshape(self.norbs*self.norbs))
+    t2 = timer()
+    self.gw_chi0_mv_time[13] += t2 - t1
 
     t1 = timer()
-    #chi0_re = self.ccv.dot(ab2v_re.reshape(self.norbs*self.norbs))
-    chi0_re = m_blas.gemv(1.0, self.vcc, ab2v_re.reshape(self.norbs*self.norbs),
-                          trans=1)
-    #chi0_re = self.vcc.T.dot(ab2v_re.reshape(self.norbs*self.norbs))[0, :]
-    #chi0_re = m_blas.matvec(self.vcc, ab2v_re.reshape(self.norbs*self.norbs),
-    #                        trans=True)
+    #chi0_re = self.cc_da.T.dot(vdp)
+    chi0_re = csr_matvec(self.cc_da_trans, vdp)
     t2 = timer()
     self.gw_chi0_mv_time[14] += t2 - t1
 
-    #t1 = timer()
-    #vdp = csr_matvec(self.v_dab, ab2v_im.reshape(self.norbs*self.norbs))
-    #t2 = timer()
-    #self.gw_chi0_mv_time[15] += t2 - t1
+    # imaginary part
+    t1 = timer()
+    vdp = csr_matvec(self.v_dab, ab2v_im.reshape(self.norbs*self.norbs))
+    t2 = timer()
+    self.gw_chi0_mv_time[15] += t2 - t1
 
     t1 = timer()
-    #chi0_im = self.ccv.dot(ab2v_im.reshape(self.norbs*self.norbs))
-    chi0_im = m_blas.gemv(1.0, self.vcc, ab2v_im.reshape(self.norbs*self.norbs),
-                          trans=1)
-    #chi0_im = m_blas.matvec(self.vcc, ab2v_im.reshape(self.norbs*self.norbs),
-    #                        trans=True)
+    chi0_im = csr_matvec(self.cc_da_trans, vdp)
     t2 = timer()
     self.gw_chi0_mv_time[16] += t2 - t1
+
+    # dense
+#    t1 = timer()
+#    chi0_re = m_blas.gemv(1.0, self.vcc, ab2v_re.reshape(self.norbs*self.norbs),
+#                          trans=1)
+#    t2 = timer()
+#    self.gw_chi0_mv_time[14] += t2 - t1
+#
+#    t1 = timer()
+#    chi0_im = m_blas.gemv(1.0, self.vcc, ab2v_im.reshape(self.norbs*self.norbs),
+#                          trans=1)
+#    t2 = timer()
+#    self.gw_chi0_mv_time[16] += t2 - t1
 
     return chi0_re + 1.0j*chi0_im
 
@@ -532,8 +556,8 @@ class gw_iter(gw):
 
     #self.vcc = np.ascontiguousarray(self.v_dab.T.dot(self.cc_da).todense())
     # use Fortran order to make blas scipy as fast than np.dot
-    self.vcc = np.asfortranarray(self.v_dab.T.dot(self.cc_da).todense())
-    print("vcc: ", self.vcc.shape)
+    #self.vcc = np.asfortranarray(self.v_dab.T.dot(self.cc_da).todense())
+    #print("vcc: ", self.vcc.shape)
 
     if self.restart_w is True: 
       from pyscf.nao.m_restart import read_rst_h5py

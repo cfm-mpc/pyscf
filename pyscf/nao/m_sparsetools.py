@@ -25,7 +25,7 @@ libsparsetools = misc.load_library("libsparsetools")
 def csr_matvec(csr, x):
 
     if not sparse.isspmatrix_csr(csr):
-        raise Exception("Matrix must be in csr format")
+        raise Exception("Matrix must be in csr format not {}".format(csr.format))
 
     nrow, ncol = csr.shape
     nnz = csr.data.shape[0]

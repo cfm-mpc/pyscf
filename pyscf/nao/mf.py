@@ -52,6 +52,11 @@ class mf(nao):
       self.pb = pb = prod_basis(nao=self, **kw)
       self.v_dab = pb.get_dp_vertex_sparse(dtype=self.dtype).tocsr()
       self.cc_da = cc = pb.get_da2cc_sparse(dtype=self.dtype).tocsr()
+
+      # taking the transpose of a csc matrix will give a csr matrix
+      # the data should be pointer, hopefully ...
+      self.v_dab_trans = pb.get_dp_vertex_sparse(dtype=self.dtype).tocsc().T
+      self.cc_da_trans = cc = pb.get_da2cc_sparse(dtype=self.dtype).tocsc().T
       self.nprod = self.cc_da.shape[1]
       if self.verbosity>0: print(__name__,'\t\t====> Number of dominant and atom-centered products {}'.format(cc.shape))
 
