@@ -14,51 +14,59 @@ def chi0_mv(self, dvin, comega=1j*0.0, dnout=None):
             sp2v : vector describing the effective perturbation [spin*product] --> value
             comega: complex frequency
     """
-    if dnout is None: dnout = np.zeros_like(dvin, dtype=self.dtypeComplex)
+    if dnout is None:
+        dnout = np.zeros_like(dvin, dtype=self.dtypeComplex)
 
     sp2v  = dvin.reshape((self.nspin,self.nprod))
     sp2dn = dnout.reshape((self.nspin,self.nprod))
     
     for s in range(self.nspin):
-      vdp = csr_matvec(self.cc_da, sp2v[s].real)  # real part
-      sab = (vdp*self.v_dab).reshape((self.norbs,self.norbs))
+
+        # real part
+        vdp = csr_matvec(self.cc_da_csr, sp2v[s].real)
+        #sab = (vdp*self.v_dab).reshape((self.norbs,self.norbs))
+        sab = csr_matvec(self.v_dab_trans, vdp).reshape((self.norbs,self.norbs))
     
-      nb2v = self.gemm(1.0, self.xocc[s], sab)
-      nm2v_re = self.gemm(1.0, nb2v, self.xvrt[s].T)
-    
-      vdp = csr_matvec(self.cc_da, sp2v[s].imag)  # imaginary
-      sab = (vdp*self.v_dab).reshape((self.norbs, self.norbs))
+        nb2v = self.gemm(1.0, self.xocc[s], sab)
+        nm2v_re = self.gemm(1.0, nb2v, self.xvrt[s], trans_b=1)
+
+        # imaginary
+        vdp = csr_matvec(self.cc_da_csr, sp2v[s].imag)
+        sab = csr_matvec(self.v_dab_trans, vdp).reshape((self.norbs, self.norbs))
       
-      nb2v = self.gemm(1.0, self.xocc[s], sab)
-      nm2v_im = self.gemm(1.0, nb2v, self.xvrt[s].T)
+        nb2v = self.gemm(1.0, self.xocc[s], sab)
+        nm2v_im = self.gemm(1.0, nb2v, self.xvrt[s], trans_b=1)
 
-      vs,nf = self.vstart[s],self.nfermi[s]
-    
-      if self.use_numba:
-        self.div_numba(self.ksn2e[0,s], self.ksn2f[0,s], nf, vs, comega, nm2v_re, nm2v_im)
-      else:
-        for n,(en,fn) in enumerate(zip(self.ksn2e[0,s,:nf], self.ksn2f[0,s,:nf])):
-          for m,(em,fm) in enumerate(zip(self.ksn2e[0,s,vs:],self.ksn2f[0,s,vs:])):
-            nm2v = nm2v_re[n, m] + 1.0j*nm2v_im[n, m]
-            nm2v = nm2v * (fn - fm) * \
-              ( 1.0 / (comega - (em - en)) - 1.0 / (comega + (em - en)) )
-            nm2v_re[n, m] = nm2v.real
-            nm2v_im[n, m] = nm2v.imag
+        vs,nf = self.vstart[s],self.nfermi[s]
+        if self.use_numba:
+            self.div_numba(self.ksn2e[0,s], self.ksn2f[0,s], nf, vs, comega, nm2v_re, nm2v_im)
+        else:
+            for n,(en,fn) in enumerate(zip(self.ksn2e[0,s,:nf], self.ksn2f[0,s,:nf])):
+                for m,(em,fm) in enumerate(zip(self.ksn2e[0,s,vs:],self.ksn2f[0,s,vs:])):
+                    nm2v = nm2v_re[n, m] + 1.0j*nm2v_im[n, m]
+                    nm2v = nm2v * (fn - fm) * \
+                    ( 1.0 / (comega - (em - en)) - 1.0 / (comega + (em - en)) )
+                    nm2v_re[n, m] = nm2v.real
+                    nm2v_im[n, m] = nm2v.imag
 
-        for n in range(vs+1,nf): #padding m<n i.e. negative occupations' difference
-          for m in range(n-vs):  nm2v_re[n,m],nm2v_im[n,m] = 0.0,0.0
+            # padding m<n i.e. negative occupations' difference
+            for n in range(vs+1,nf):
+                for m in range(n-vs):
+                    nm2v_re[n,m], nm2v_im[n,m] = 0.0,0.0
 
-      nb2v = self.gemm(1.0, nm2v_re, self.xvrt[s]) # real part
-      ab2v = self.gemm(1.0, self.xocc[s].T, nb2v).reshape(self.norbs*self.norbs)
-      vdp = csr_matvec(self.v_dab, ab2v)
-      chi0_re = vdp*self.cc_da
+        # real part
+        nb2v = self.gemm(1.0, nm2v_re, self.xvrt[s])
+        ab2v = self.gemm(1.0, self.xocc[s], nb2v, trans_a=1).reshape(self.norbs*self.norbs)
+        vdp = csr_matvec(self.v_dab_csr, ab2v)
+        chi0_re = csr_matvec(self.cc_da_trans, vdp)
 
-      nb2v = self.gemm(1.0, nm2v_im, self.xvrt[s]) # imag part
-      ab2v = self.gemm(1.0, self.xocc[s].T, nb2v).reshape(self.norbs*self.norbs)
-      vdp = csr_matvec(self.v_dab, ab2v)    
-      chi0_im = vdp*self.cc_da
-      
-      sp2dn[s] = chi0_re + 1.0j*chi0_im
+        # imag part
+        nb2v = self.gemm(1.0, nm2v_im, self.xvrt[s])
+        ab2v = self.gemm(1.0, self.xocc[s], nb2v, trans_a=1).reshape(self.norbs*self.norbs)
+        vdp = csr_matvec(self.v_dab_csr, ab2v)
+        chi0_im = csr_matvec(self.cc_da_trans, vdp)
+
+        sp2dn[s] = chi0_re + 1.0j*chi0_im
       
     return dnout
 
@@ -85,20 +93,19 @@ def chi0_mv_gpu(self, v, comega=1j*0.0):
     vext[:, 1] = v.imag
 
     # real part
-    vdp = csr_matvec(self.cc_da, vext[:, 0])
-    sab = (vdp*self.v_dab).reshape([self.norbs, self.norbs])
+    vdp = csr_matvec(self.cc_da_csr, vext[:, 0])
+    sab = csr_matvec(self.v_dab_trans, vdp).reshape([self.norbs, self.norbs])
 
     self.td_GPU.cpy_sab_to_device(sab, Async = 1)
     self.td_GPU.calc_nb2v_from_sab(reim=0)
+
     # nm2v_real
     self.td_GPU.calc_nm2v_real()
 
-
     # start imaginary part
-    vdp = csr_matvec(self.cc_da, vext[:, 1])
-    sab = (vdp*self.v_dab).reshape([self.norbs, self.norbs])
+    vdp = csr_matvec(self.cc_da_csr, vext[:, 1])
+    sab = csr_matvec(self.v_dab_trans, vdp).reshape([self.norbs, self.norbs])
     self.td_GPU.cpy_sab_to_device(sab, Async = 2)
-
 
     self.td_GPU.calc_nb2v_from_sab(reim=1)
     # nm2v_imag
@@ -114,28 +121,17 @@ def chi0_mv_gpu(self, v, comega=1j*0.0):
     # start calc_ imag to overlap with cpu calculations
     self.td_GPU.calc_nb2v_from_nm2v_imag()
 
-    vdp = csr_matvec(self.v_dab, sab)
+    vdp = csr_matvec(self.v_dab_csr, sab)
     
     self.td_GPU.calc_sab(reim=1)
 
     # finish real part 
-    chi0_re = vdp*self.cc_da
+    chi0_re = csr_matvec(self.cc_da_trans, vdp)
 
     # imag part
     self.td_GPU.cpy_sab_to_host(sab)
 
-    vdp = csr_matvec(self.v_dab, sab)
-    chi0_im = vdp*self.cc_da
-#    ssum_re = np.sum(abs(chi0_re))
-#    ssum_im = np.sum(abs(chi0_im))
-#    if math.isnan(ssum_re) or math.isnan(ssum_im):
-#      print(__name__)
-#      print('comega ', comega)
-#      print(v.shape, v.dtype)
-#      print("chi0 = ", ssum_re, ssum_im)
-#      print("sab = ", np.sum(abs(sab)))
-#      raise RuntimeError('ssum == np.nan')
-
+    vdp = csr_matvec(self.v_dab_csr, sab)
+    chi0_im = csr_matvec(self.cc_da_trans, vdp)
 
     return chi0_re + 1.0j*chi0_im
-
