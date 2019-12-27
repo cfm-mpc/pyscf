@@ -244,11 +244,11 @@ class gw_iter(gw):
             for n in range(len(self.nn[s])):    
                 for m in range(self.norbs):
                     # v XVX
-                    a = np.dot(self.kernel_sq, xvx[s][n,m,:])
+                    a = self.kernel_sq.dot(xvx[s][n,m,:])
                     # \chi_{0}v XVX by using matrix vector
                     b = self.gw_chi0_mv(a, self.comega_current)
                     # v\chi_{0}v XVX, this should be equals to bxvx in last approach
-                    a = np.dot(self.kernel_sq, b)
+                    a = self.kernel_sq.dot(b)
                     sf_aux[n,m,:],exitCode = lgmres(k_c_opt, a,
                                                      atol=self.gw_iter_tol,
                                                      maxiter=self.maxiter)
@@ -290,34 +290,36 @@ class gw_iter(gw):
     from scipy.linalg import blas
     from pyscf.nao.m_sparsetools import csr_matvec    
     
-    if dnout is None:
-        dnout = np.zeros_like(dvin, dtype=self.dtypeComplex)
+    # real part
+    vdp = csr_matvec(self.cc_da_csr, dvin.real)
+    #sab_real = (vdp*self.v_dab).reshape((self.norbs,self.norbs))
+    sab_real = csr_matvec(self.v_dab_trans, vdp).reshape((self.norbs,self.norbs))
 
-    dnout.fill(0.0)
-
-    vdp = csr_matvec(self.cc_da, dvin.real)  # real part
-    sab_real = (vdp*self.v_dab).reshape((self.norbs,self.norbs))
-
-    vdp = csr_matvec(self.cc_da, dvin.imag)  # imaginary
-    sab_imag = (vdp*self.v_dab).reshape((self.norbs, self.norbs))
+    # imaginary
+    vdp = csr_matvec(self.cc_da_csr, dvin.imag)
+    #sab_imag = (vdp*self.v_dab).reshape((self.norbs, self.norbs))
+    sab_imag = csr_matvec(self.v_dab_trans, vdp).reshape((self.norbs, self.norbs))
 
     ab2v_re = np.zeros((self.norbs, self.norbs), dtype=self.dtype)
     ab2v_im = np.zeros((self.norbs, self.norbs), dtype=self.dtype)
 
-    for s in range(self.nspin):
-        nb2v = self.gemm(1.0, self.xocc[s], sab_real)
-        nm2v_re = self.gemm(1.0, nb2v, self.xvrt[s].T)
+    for spin in range(self.nspin):
+        nb2v = self.gemm(1.0, self.xocc[spin], sab_real)
+        nm2v_re = self.gemm(1.0, nb2v, self.xvrt[spin], trans_b=1)
     
-        nb2v = self.gemm(1.0, self.xocc[s], sab_imag)
-        nm2v_im = self.gemm(1.0, nb2v, self.xvrt[s].T)
+        nb2v = self.gemm(1.0, self.xocc[spin], sab_imag)
+        nm2v_im = self.gemm(1.0, nb2v, self.xvrt[spin], trans_b=1)
 
-        vs, nf = self.vstart[s], self.nfermi[s]
+        vs, nf = self.vstart[spin], self.nfermi[spin]
     
         if self.use_numba:
-            self.div_numba(self.ksn2e[0,s], self.ksn2f[0,s], nf, vs, comega, nm2v_re, nm2v_im)
+            self.div_numba(self.ksn2e[0, spin], self.ksn2f[0, spin], nf, vs,
+                           comega, nm2v_re, nm2v_im)
         else:
-            for n,(en,fn) in enumerate(zip(self.ksn2e[0,s,:nf], self.ksn2f[0,s,:nf])):
-                for m,(em,fm) in enumerate(zip(self.ksn2e[0,s,vs:],self.ksn2f[0,s,vs:])):
+            for n,(en,fn) in enumerate(zip(self.ksn2e[0, spin, :nf],
+                                           self.ksn2f[0, spin, :nf])):
+                for m,(em,fm) in enumerate(zip(self.ksn2e[0, spin, vs:],
+                                               self.ksn2f[0, spin, vs:])):
                     nm2v = nm2v_re[n, m] + 1.0j*nm2v_im[n, m]
                     nm2v = nm2v * (fn - fm) * \
                     ( 1.0 / (comega - (em - en)) - 1.0 / (comega + (em - en)) )
@@ -327,22 +329,23 @@ class gw_iter(gw):
             # padding m<n i.e. negative occupations' difference
             for n in range(vs+1,nf):
                 for m in range(n-vs):  
-                    nm2v_re[n,m],nm2v_im[n,m] = 0.0,0.0
+                    nm2v_re[n, m],nm2v_im[n, m] = 0.0,0.0
 
-        nb2v = self.gemm(1.0, nm2v_re, self.xvrt[s]) # real part
-        ab2v_re = self.gemm(1.0, self.xocc[s].T, nb2v, 1.0, ab2v_re)
+        nb2v = self.gemm(1.0, nm2v_re, self.xvrt[spin]) # real part
+        ab2v_re = self.gemm(1.0, self.xocc[spin], nb2v, 1.0, ab2v_re, trans_a=1)
 
-        nb2v = self.gemm(1.0, nm2v_im, self.xvrt[s]) # imag part
-        ab2v_im = self.gemm(1.0, self.xocc[s].T, nb2v, 1.0, ab2v_im)
+        nb2v = self.gemm(1.0, nm2v_im, self.xvrt[spin]) # imag part
+        ab2v_im = self.gemm(1.0, self.xocc[spin], nb2v, 1.0, ab2v_im, trans_a=1)
     
-    vdp = csr_matvec(self.v_dab, ab2v_re.reshape(self.norbs*self.norbs))
-    chi0_re = vdp*self.cc_da
+    vdp = csr_matvec(self.v_dab_csr, ab2v_re.reshape(self.norbs*self.norbs))
+    #chi0_re = vdp*self.cc_da
+    chi0_re = csr_matvec(self.cc_da_trans, vdp)
 
-    vdp = csr_matvec(self.v_dab, ab2v_im.reshape(self.norbs*self.norbs))    
-    chi0_im = vdp*self.cc_da
+    vdp = csr_matvec(self.v_dab_csr, ab2v_im.reshape(self.norbs*self.norbs))    
+    #chi0_im = vdp*self.cc_da
+    chi0_im = csr_matvec(self.cc_da_trans, vdp)
 
-    dnout = chi0_re + 1.0j*chi0_im
-    return dnout
+    return chi0_re + 1.0j*chi0_im
 
   def gw_comp_veff(self, vext, comega=1j*0.0):
     """
