@@ -20,9 +20,9 @@ class scf(tddft_iter):
     self.perform_scf = kw['perform_scf'] if 'perform_scf' in kw else False
     self.kmat_algo = kw['kmat_algo'] if 'kmat_algo' in kw else None
     self.kmat_timing = 0.0 if 'kmat_timing' in kw else None
-    for x in ['xc_code', 'dealloc_hsx', 'dtype']: kw.pop(x,None)
-    tddft_iter.__init__(self, dtype=np.float64, xc_code='RPA', dealloc_hsx=False, **kw)
-    #print(__name__, ' dtype ', self.dtype)
+    for x in ['xc_code', 'dealloc_hsx']: kw.pop(x,None)
+    tddft_iter.__init__(self, xc_code='RPA', dealloc_hsx=False, **kw)
+    print(__name__, ' dtype ', self.dtype)
 
     self.xc_code_kernel = copy(self.xc_code)
     self.xc_code = self.xc_code_mf
@@ -126,7 +126,10 @@ class scf(tddft_iter):
     return self.vhartree_den(dm=dm)
 
   def get_k(self, dm=None, **kw):
-    '''Compute K matrix for the given density matrix.'''
+    '''
+    Compute K matrix for the given density matrix.
+    '''
+    
     from pyscf.nao.m_kmat_den import kmat_den
     if dm is None: dm = self.make_rdm1()
     
@@ -151,6 +154,7 @@ class scf(tddft_iter):
 
 
   def get_jk(self, mol=None, dm=None, hermi=1, **kw):
+
     if dm is None: dm = self.make_rdm1()
     j = self.get_j(dm, **kw)
     k = self.get_k(dm, **kw)

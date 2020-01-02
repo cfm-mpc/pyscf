@@ -1,12 +1,13 @@
 from __future__ import print_function, division
-import sys, numpy as np
+import sys
 from copy import copy
 from pyscf.data.nist import HARTREE2EV
 from timeit import default_timer as timer
 import numpy as np
-from numpy import stack, dot, zeros, einsum, pi, log, array, require
+from numpy import dot, zeros, einsum, pi, log, array, require
 from pyscf.nao import scf, gw
 import time
+from pyscf.nao.m_gw_chi0_noxv import gw_chi0_mv, gw_chi0_mv_gpu
 
 def profile(fnc):
     """
@@ -37,6 +38,7 @@ class gw_iter(gw):
 
   def __init__(self, **kw):
     gw.__init__(self, **kw)
+
     self.gw_iter_tol = kw['gw_iter_tol'] if 'gw_iter_tol' in kw else 1e-4
     self.maxiter = kw['maxiter'] if 'maxiter' in kw else 1000
 
@@ -243,10 +245,13 @@ class gw_iter(gw):
             #print('k_c_opt',k_c_opt.shape)
             for n in range(len(self.nn[s])):    
                 for m in range(self.norbs):
+                    
                     # v XVX
                     a = self.kernel_sq.dot(xvx[s][n,m,:])
+                    
                     # \chi_{0}v XVX by using matrix vector
-                    b = self.gw_chi0_mv(a, self.comega_current)
+                    b = self.chi0_mv(a, self.comega_current)
+                    
                     # v\chi_{0}v XVX, this should be equals to bxvx in last approach
                     a = self.kernel_sq.dot(b)
                     sf_aux[n,m,:],exitCode = lgmres(k_c_opt, a,
@@ -254,10 +259,11 @@ class gw_iter(gw):
                                                      maxiter=self.maxiter)
                     if exitCode != 0:
                       print("LGMRES has not achieved convergence: exitCode = {}".format(exitCode))
-            # I= XVX I_aux
+            # I = XVX I_aux
             t2 = timer()
             print("time for lgmres loop: ", t2-t1)
-            inm[:,:,iw]=np.einsum('nmp,nmp->nm',xvx[s], sf_aux, optimize=optimize)
+            
+            inm[:,:,iw] = np.einsum('nmp,nmp->nm', xvx[s], sf_aux, optimize=optimize)
         snm2i.append(np.real(inm))
 
     if (self.write_w==True):
@@ -267,14 +273,21 @@ class gw_iter(gw):
     return snm2i
 
   def gw_vext2veffmatvec(self,vin):
-    dn0 = self.gw_chi0_mv(vin, self.comega_current)
+    dn0 = self.chi0_mv(vin, self.comega_current)
     vcre,vcim = self.gw_applykernel_nspin1(dn0)
     return vin - (vcre + 1.0j*vcim)         #1- v\chi_0
 
   def gw_vext2veffmatvec2(self,vin):
-    dn0 = self.gw_chi0_mv(vin, self.comega_current)
+    dn0 = self.chi0_mv(vin, self.comega_current)
     vcre,vcim = self.gw_applykernel_nspin1(dn0)
     return 1- (vin - (vcre + 1.0j*vcim))    #1- (1-v\chi_0)
+
+  def chi0_mv(self, dvin, comega):
+
+      if self.td_GPU.GPU is None:
+          return gw_chi0_mv(self, dvin, comega=comega)
+      else:
+          return gw_chi0_mv_gpu(self, dvin, comega=comega)
 
   def gw_applykernel_nspin1(self,dn):
     daux  = np.zeros(self.nprod, dtype=self.dtype)
@@ -284,68 +297,6 @@ class gw_iter(gw):
     daux[:] = np.require(dn.imag, dtype=self.dtype, requirements=["A","O"])
     vcim = self.spmv(self.nprod, 1.0, self.kernel, daux)
     return vcre,vcim
-
-  def gw_chi0_mv(self,dvin, comega=1j*0.0, dnout=None):
-
-    from scipy.linalg import blas
-    from pyscf.nao.m_sparsetools import csr_matvec    
-    
-    # real part
-    vdp = csr_matvec(self.cc_da_csr, dvin.real)
-    #sab_real = (vdp*self.v_dab).reshape((self.norbs,self.norbs))
-    sab_real = csr_matvec(self.v_dab_trans, vdp).reshape((self.norbs,self.norbs))
-
-    # imaginary
-    vdp = csr_matvec(self.cc_da_csr, dvin.imag)
-    #sab_imag = (vdp*self.v_dab).reshape((self.norbs, self.norbs))
-    sab_imag = csr_matvec(self.v_dab_trans, vdp).reshape((self.norbs, self.norbs))
-
-    ab2v_re = np.zeros((self.norbs, self.norbs), dtype=self.dtype)
-    ab2v_im = np.zeros((self.norbs, self.norbs), dtype=self.dtype)
-
-    for spin in range(self.nspin):
-        nb2v = self.gemm(1.0, self.xocc[spin], sab_real)
-        nm2v_re = self.gemm(1.0, nb2v, self.xvrt[spin], trans_b=1)
-    
-        nb2v = self.gemm(1.0, self.xocc[spin], sab_imag)
-        nm2v_im = self.gemm(1.0, nb2v, self.xvrt[spin], trans_b=1)
-
-        vs, nf = self.vstart[spin], self.nfermi[spin]
-    
-        if self.use_numba:
-            self.div_numba(self.ksn2e[0, spin], self.ksn2f[0, spin], nf, vs,
-                           comega, nm2v_re, nm2v_im)
-        else:
-            for n,(en,fn) in enumerate(zip(self.ksn2e[0, spin, :nf],
-                                           self.ksn2f[0, spin, :nf])):
-                for m,(em,fm) in enumerate(zip(self.ksn2e[0, spin, vs:],
-                                               self.ksn2f[0, spin, vs:])):
-                    nm2v = nm2v_re[n, m] + 1.0j*nm2v_im[n, m]
-                    nm2v = nm2v * (fn - fm) * \
-                    ( 1.0 / (comega - (em - en)) - 1.0 / (comega + (em - en)) )
-                    nm2v_re[n, m] = nm2v.real
-                    nm2v_im[n, m] = nm2v.imag
-
-            # padding m<n i.e. negative occupations' difference
-            for n in range(vs+1,nf):
-                for m in range(n-vs):  
-                    nm2v_re[n, m],nm2v_im[n, m] = 0.0,0.0
-
-        nb2v = self.gemm(1.0, nm2v_re, self.xvrt[spin]) # real part
-        ab2v_re = self.gemm(1.0, self.xocc[spin], nb2v, 1.0, ab2v_re, trans_a=1)
-
-        nb2v = self.gemm(1.0, nm2v_im, self.xvrt[spin]) # imag part
-        ab2v_im = self.gemm(1.0, self.xocc[spin], nb2v, 1.0, ab2v_im, trans_a=1)
-    
-    vdp = csr_matvec(self.v_dab_csr, ab2v_re.reshape(self.norbs*self.norbs))
-    #chi0_re = vdp*self.cc_da
-    chi0_re = csr_matvec(self.cc_da_trans, vdp)
-
-    vdp = csr_matvec(self.v_dab_csr, ab2v_im.reshape(self.norbs*self.norbs))    
-    #chi0_im = vdp*self.cc_da
-    chi0_im = csr_matvec(self.cc_da_trans, vdp)
-
-    return chi0_re + 1.0j*chi0_im
 
   def gw_comp_veff(self, vext, comega=1j*0.0):
     """
@@ -417,7 +368,8 @@ class gw_iter(gw):
 
   def gw_corr_int_iter(self, sn2w, eps=None):
     """
-    This computes an integral part of the GW correction at GW class while uses get_snmw2sf_iter
+    This computes an integral part of the GW correction at GW class while
+    uses get_snmw2sf_iter
     """
 
     if self.restart_w is True: 
@@ -435,7 +387,8 @@ class gw_iter(gw):
 
   def gw_corr_res_iter(self, sn2w):
     """
-    This computes a residue part of the GW correction at energies in iterative procedure
+    This computes a residue part of the GW correction at energies in 
+    iterative procedure
     """
     
     from scipy.sparse.linalg import lgmres, LinearOperator
@@ -452,7 +405,7 @@ class gw_iter(gw):
           self.comega_current = z_real
           xvx = np.dot(xv, x[pole[1]])
           a = np.dot(self.kernel_sq, xvx)
-          b = self.gw_chi0_mv(a, self.comega_current)
+          b = self.chi0_mv(a, self.comega_current)
           a = np.dot(self.kernel_sq, b)
           si_xvx, exitCode = lgmres(k_c_opt, a, atol=self.gw_iter_tol, maxiter=self.maxiter)
           if exitCode != 0: print("LGMRES has not achieved convergence: exitCode = {}".format(exitCode))
