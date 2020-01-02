@@ -23,16 +23,15 @@ def chi0_mv(self, dvin, comega=1j*0.0, dnout=None):
     for s in range(self.nspin):
 
         # real part
-        vdp = csr_matvec(self.cc_da_csr, sp2v[s].real)
-        #sab = (vdp*self.v_dab).reshape((self.norbs,self.norbs))
-        sab = csr_matvec(self.v_dab_trans, vdp).reshape((self.norbs,self.norbs))
+        sab = calc_sab(self.cc_da_csr, self.v_dab_trans,
+                       sp2v[s].real).reshape((self.norbs,self.norbs))
     
         nb2v = self.gemm(1.0, self.xocc[s], sab)
         nm2v_re = self.gemm(1.0, nb2v, self.xvrt[s], trans_b=1)
 
         # imaginary
-        vdp = csr_matvec(self.cc_da_csr, sp2v[s].imag)
-        sab = csr_matvec(self.v_dab_trans, vdp).reshape((self.norbs, self.norbs))
+        sab = calc_sab(self.cc_da_csr, self.v_dab_trans,
+                       sp2v[s].imag).reshape((self.norbs,self.norbs))
       
         nb2v = self.gemm(1.0, self.xocc[s], sab)
         nm2v_im = self.gemm(1.0, nb2v, self.xvrt[s], trans_b=1)
@@ -57,14 +56,12 @@ def chi0_mv(self, dvin, comega=1j*0.0, dnout=None):
         # real part
         nb2v = self.gemm(1.0, nm2v_re, self.xvrt[s])
         ab2v = self.gemm(1.0, self.xocc[s], nb2v, trans_a=1).reshape(self.norbs*self.norbs)
-        vdp = csr_matvec(self.v_dab_csr, ab2v)
-        chi0_re = csr_matvec(self.cc_da_trans, vdp)
+        chi0_re = calc_sab(self.v_dab_csr, self.cc_da_trans, ab2v)
 
         # imag part
         nb2v = self.gemm(1.0, nm2v_im, self.xvrt[s])
         ab2v = self.gemm(1.0, self.xocc[s], nb2v, trans_a=1).reshape(self.norbs*self.norbs)
-        vdp = csr_matvec(self.v_dab_csr, ab2v)
-        chi0_im = csr_matvec(self.cc_da_trans, vdp)
+        chi0_im = calc_sab(self.v_dab_csr, self.cc_da_trans, ab2v)
 
         sp2dn[s] = chi0_re + 1.0j*chi0_im
       
@@ -73,29 +70,21 @@ def chi0_mv(self, dvin, comega=1j*0.0, dnout=None):
 #
 #
 #
-
 def chi0_mv_gpu(self, v, comega=1j*0.0):
-#        tddft_iter_gpu, v, cc_da, v_dab, no,
-#        comega=1j*0.0, dtype=np.float32, cdtype=np.complex64):
 # check with nspin=2
     """
         Apply the non-interacting response function to a vector using gpu for
         matrix-matrix multiplication
     """
-    assert self.nspin==1
+    assert self.nspin == 1
     
     if self.dtype != np.float32:
         print(self.dtype)
         raise ValueError("GPU version only with single precision")
 
-    vext = np.zeros((v.shape[0], 2), dtype = self.dtype, order="F")
-    vext[:, 0] = v.real
-    vext[:, 1] = v.imag
-
     # real part
-    vdp = csr_matvec(self.cc_da_csr, vext[:, 0])
-    sab = csr_matvec(self.v_dab_trans, vdp).reshape([self.norbs, self.norbs])
-
+    sab = calc_sab(self.cc_da_csr, self.v_dab_trans,
+                   v.real).reshape([self.norbs, self.norbs])
     self.td_GPU.cpy_sab_to_device(sab, Async = 1)
     self.td_GPU.calc_nb2v_from_sab(reim=0)
 
@@ -103,8 +92,8 @@ def chi0_mv_gpu(self, v, comega=1j*0.0):
     self.td_GPU.calc_nm2v_real()
 
     # start imaginary part
-    vdp = csr_matvec(self.cc_da_csr, vext[:, 1])
-    sab = csr_matvec(self.v_dab_trans, vdp).reshape([self.norbs, self.norbs])
+    sab = calc_sab(self.cc_da_csr, self.v_dab_trans,
+                   v.imag).reshape([self.norbs, self.norbs])
     self.td_GPU.cpy_sab_to_device(sab, Async = 2)
 
     self.td_GPU.calc_nb2v_from_sab(reim=1)
@@ -135,3 +124,7 @@ def chi0_mv_gpu(self, v, comega=1j*0.0):
     chi0_im = csr_matvec(self.cc_da_trans, vdp)
 
     return chi0_re + 1.0j*chi0_im
+
+def calc_sab(mat1, mat2, vec):
+    vdp = csr_matvec(mat1, vec)
+    return csr_matvec(mat2, vdp)

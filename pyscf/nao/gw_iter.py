@@ -243,10 +243,13 @@ class gw_iter(gw):
             #print('k_c_opt',k_c_opt.shape)
             for n in range(len(self.nn[s])):    
                 for m in range(self.norbs):
+                    
                     # v XVX
                     a = self.kernel_sq.dot(xvx[s][n,m,:])
+                    
                     # \chi_{0}v XVX by using matrix vector
                     b = self.gw_chi0_mv(a, self.comega_current)
+                    
                     # v\chi_{0}v XVX, this should be equals to bxvx in last approach
                     a = self.kernel_sq.dot(b)
                     sf_aux[n,m,:],exitCode = lgmres(k_c_opt, a,
@@ -254,10 +257,11 @@ class gw_iter(gw):
                                                      maxiter=self.maxiter)
                     if exitCode != 0:
                       print("LGMRES has not achieved convergence: exitCode = {}".format(exitCode))
-            # I= XVX I_aux
+            # I = XVX I_aux
             t2 = timer()
             print("time for lgmres loop: ", t2-t1)
-            inm[:,:,iw]=np.einsum('nmp,nmp->nm',xvx[s], sf_aux, optimize=optimize)
+            
+            inm[:,:,iw] = np.einsum('nmp,nmp->nm', xvx[s], sf_aux, optimize=optimize)
         snm2i.append(np.real(inm))
 
     if (self.write_w==True):
