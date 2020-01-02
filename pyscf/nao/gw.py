@@ -32,7 +32,6 @@ class gw(scf):
     """ Constructor G0W0 class """
     # how to exclude from the input the dtype and xc_code ?
     scf.__init__(self, **kw)
-    print(__name__, ' dtype ', self.dtype)
 
     self.xc_code_scf = copy(self.xc_code)
     self.niter_max_ev = kw['niter_max_ev'] if 'niter_max_ev' in kw else 15

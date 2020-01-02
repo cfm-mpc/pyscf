@@ -7,7 +7,7 @@ import numpy as np
 from numpy import dot, zeros, einsum, pi, log, array, require
 from pyscf.nao import scf, gw
 import time
-from pyscf.nao.m_gw_chi0_noxv import gw_chi0_mv
+from pyscf.nao.m_gw_chi0_noxv import gw_chi0_mv, gw_chi0_mv_gpu
 
 def profile(fnc):
     """
@@ -38,6 +38,7 @@ class gw_iter(gw):
 
   def __init__(self, **kw):
     gw.__init__(self, **kw)
+
     self.gw_iter_tol = kw['gw_iter_tol'] if 'gw_iter_tol' in kw else 1e-4
     self.maxiter = kw['maxiter'] if 'maxiter' in kw else 1000
 
@@ -249,7 +250,7 @@ class gw_iter(gw):
                     a = self.kernel_sq.dot(xvx[s][n,m,:])
                     
                     # \chi_{0}v XVX by using matrix vector
-                    b = gw_chi0_mv(self, a, self.comega_current)
+                    b = self.chi0_mv(a, self.comega_current)
                     
                     # v\chi_{0}v XVX, this should be equals to bxvx in last approach
                     a = self.kernel_sq.dot(b)
@@ -272,14 +273,21 @@ class gw_iter(gw):
     return snm2i
 
   def gw_vext2veffmatvec(self,vin):
-    dn0 = gw_chi0_mv(self, vin, self.comega_current)
+    dn0 = self.chi0_mv(vin, self.comega_current)
     vcre,vcim = self.gw_applykernel_nspin1(dn0)
     return vin - (vcre + 1.0j*vcim)         #1- v\chi_0
 
   def gw_vext2veffmatvec2(self,vin):
-    dn0 = gw_chi0_mv(self, vin, self.comega_current)
+    dn0 = self.chi0_mv(vin, self.comega_current)
     vcre,vcim = self.gw_applykernel_nspin1(dn0)
     return 1- (vin - (vcre + 1.0j*vcim))    #1- (1-v\chi_0)
+
+  def chi0_mv(self, dvin, comega):
+
+      if self.td_GPU.GPU is None:
+          return gw_chi0_mv(self, dvin, comega=comega)
+      else:
+          return gw_chi0_mv_gpu(self, dvin, comega=comega)
 
   def gw_applykernel_nspin1(self,dn):
     daux  = np.zeros(self.nprod, dtype=self.dtype)
@@ -397,7 +405,7 @@ class gw_iter(gw):
           self.comega_current = z_real
           xvx = np.dot(xv, x[pole[1]])
           a = np.dot(self.kernel_sq, xvx)
-          b = gw_chi0_mv(self, a, self.comega_current)
+          b = self.chi0_mv(a, self.comega_current)
           a = np.dot(self.kernel_sq, b)
           si_xvx, exitCode = lgmres(k_c_opt, a, atol=self.gw_iter_tol, maxiter=self.maxiter)
           if exitCode != 0: print("LGMRES has not achieved convergence: exitCode = {}".format(exitCode))
