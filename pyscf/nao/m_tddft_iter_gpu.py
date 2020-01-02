@@ -43,12 +43,12 @@ class tddft_iter_gpu_c(gpu_initialize):
                       * device: integer to use a certain GPU if there is more than one
         """
 
-        warnings.warn("GPU seems to give issue with the mat-mat products, results may not be trusted")
         gpu_initialize.__init__(self, GPU, norbs, nfermi, nprod, vstart)
         
         if self.GPU is not None:
+            warnings.warn("GPU seems to give issue with the mat-mat products, results may not be trusted")
 
-              libnao_gpu.init_tddft_iter_gpu(
+            libnao_gpu.init_tddft_iter_gpu(
                           X4.ctypes.data_as(POINTER(c_float)), c_int(self.norbs),
                           ksn2e[0, 0, :].ctypes.data_as(POINTER(c_float)), 
                           ksn2f[0, 0, :].ctypes.data_as(POINTER(c_float)),

@@ -43,6 +43,9 @@ class gw_iter(gw):
     self.maxiter = kw['maxiter'] if 'maxiter' in kw else 1000
 
     self.h0_vh_x_expval = self.get_h0_vh_x_expval()
+    self.ncall_chi0_mv_ite = 0
+    self.ncall_chi0_mv_total = 0
+    self.chi0_timing = np.zeros((17), dtype=np.float64)
 
   def si_c2(self,ww):
     """
@@ -240,6 +243,7 @@ class gw_iter(gw):
         for iw, w in enumerate(ww):
             self.comega_current = w
 
+            self.ncall_chi0_mv_ite = 0
             print("freq: ", iw, "nn = {}; norbs = {}".format(len(self.nn[s]), self.norbs))
             t1 = timer()
             #print('k_c_opt',k_c_opt.shape)
@@ -254,6 +258,7 @@ class gw_iter(gw):
                     
                     # v\chi_{0}v XVX, this should be equals to bxvx in last approach
                     a = self.kernel_sq.dot(b)
+
                     sf_aux[n,m,:],exitCode = lgmres(k_c_opt, a,
                                                      atol=self.gw_iter_tol,
                                                      maxiter=self.maxiter)
@@ -262,6 +267,9 @@ class gw_iter(gw):
             # I = XVX I_aux
             t2 = timer()
             print("time for lgmres loop: ", t2-t1)
+            print("number call chi0_mv: ", self.ncall_chi0_mv_ite)
+
+            self.ncall_chi0_mv_total += self.ncall_chi0_mv_ite
             
             inm[:,:,iw] = np.einsum('nmp,nmp->nm', xvx[s], sf_aux, optimize=optimize)
         snm2i.append(np.real(inm))
@@ -270,6 +278,7 @@ class gw_iter(gw):
         from pyscf.nao.m_restart import write_rst_h5py
         print(write_rst_h5py(data = snm2i, filename= 'SCREENED_COULOMB.hdf5'))
 
+    print("Total call chi0_mv: ", self.ncall_chi0_mv_total)
     return snm2i
 
   def gw_vext2veffmatvec(self,vin):
@@ -284,8 +293,10 @@ class gw_iter(gw):
 
   def chi0_mv(self, dvin, comega):
 
+      self.ncall_chi0_mv_ite += 1
+
       if self.td_GPU.GPU is None:
-          return gw_chi0_mv(self, dvin, comega=comega)
+          return gw_chi0_mv(self, dvin, comega=comega, timing=self.chi0_timing)
       else:
           return gw_chi0_mv_gpu(self, dvin, comega=comega)
 
@@ -486,7 +497,9 @@ class gw_iter(gw):
     self.mo_energy_gw = np.copy(self.mo_energy)
     self.mo_coeff_gw = np.copy(self.mo_coeff)
     self.argsort = []
+
     for s,nn in enumerate(self.nn):
+      
       self.mo_energy_gw[0,s,nn] = self.sn2eval_gw[s]
       nn_occ = [n for n in nn if n<self.nocc_0t[s]]
       nn_vrt = [n for n in nn if n>=self.nocc_0t[s]]
@@ -508,7 +521,12 @@ class gw_iter(gw):
     if self.verbosity>3:
       print(__name__,'\t\t====> Performed xc_code: {}\n '.format(self.xc_code))
       print('\nConverged GW-corrected eigenvalues:\n',self.mo_energy_gw*HARTREE2EV)
-    
+
+    with open("gw_iter_chi0_mv.txt", "w") as fl:
+        fl.write("# step  time [s]\n")
+        for it, time in enumerate(self.chi0_timing):
+            fl.write("{}: {}\n".format(it, time))
+
     return self.etot_gw()
         
   # This line is odd !!!
