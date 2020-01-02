@@ -17,7 +17,7 @@ class chi0_matvec(mf):
   def __init__(self, **kw):
     from pyscf.nao.m_fermi_dirac import fermi_dirac_occupations
 
-    self.dtype = kw['dtype'] if 'dtype' in kw else np.float32
+    self.dtype = kw['dtype'] if 'dtype' in kw else np.float64
     for x in ['dtype']: kw.pop(x, None)
     mf.__init__(self, dtype=self.dtype, **kw)
 
