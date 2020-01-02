@@ -13,6 +13,7 @@
 # limitations under the License.
 
 from __future__ import print_function, division
+import warnings
 import numpy as np
 from ctypes import POINTER, c_double, c_int, c_int64, c_float, c_int, c_long
 from pyscf.nao.m_gpu_base import gpu_initialize
@@ -42,6 +43,7 @@ class tddft_iter_gpu_c(gpu_initialize):
                       * device: integer to use a certain GPU if there is more than one
         """
 
+        warnings.warn("GPU seems to give issue with the mat-mat products, results may not be trusted")
         gpu_initialize.__init__(self, GPU, norbs, nfermi, nprod, vstart)
         
         if self.GPU is not None:
