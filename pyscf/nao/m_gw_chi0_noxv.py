@@ -3,6 +3,7 @@ import sys
 from timeit import default_timer as timer
 import numpy as np
 from pyscf.nao.m_chi0_noxv import calc_sab, div_eigenenergy
+from pyscf.nao.m_sparsetools import csr_matvec
 
 def gw_chi0_mv(self, dvin, comega=1j*0.0):
 
