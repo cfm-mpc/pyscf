@@ -20,50 +20,38 @@ def chi0_mv(self, dvin, comega=1j*0.0, dnout=None):
     sp2v  = dvin.reshape((self.nspin,self.nprod))
     sp2dn = dnout.reshape((self.nspin,self.nprod))
     
-    for s in range(self.nspin):
+    for spin in range(self.nspin):
 
         # real part
         sab = calc_sab(self.cc_da_csr, self.v_dab_trans,
-                       sp2v[s].real).reshape((self.norbs,self.norbs))
+                       sp2v[spin].real).reshape((self.norbs,self.norbs))
     
-        nb2v = self.gemm(1.0, self.xocc[s], sab)
-        nm2v_re = self.gemm(1.0, nb2v, self.xvrt[s], trans_b=1)
+        nb2v = self.gemm(1.0, self.xocc[spin], sab)
+        nm2v_re = self.gemm(1.0, nb2v, self.xvrt[spin], trans_b=1)
 
         # imaginary
         sab = calc_sab(self.cc_da_csr, self.v_dab_trans,
-                       sp2v[s].imag).reshape((self.norbs,self.norbs))
+                       sp2v[spin].imag).reshape((self.norbs,self.norbs))
       
-        nb2v = self.gemm(1.0, self.xocc[s], sab)
-        nm2v_im = self.gemm(1.0, nb2v, self.xvrt[s], trans_b=1)
+        nb2v = self.gemm(1.0, self.xocc[spin], sab)
+        nm2v_im = self.gemm(1.0, nb2v, self.xvrt[spin], trans_b=1)
 
-        vs,nf = self.vstart[s],self.nfermi[s]
-        if self.use_numba:
-            self.div_numba(self.ksn2e[0,s], self.ksn2f[0,s], nf, vs, comega, nm2v_re, nm2v_im)
-        else:
-            for n,(en,fn) in enumerate(zip(self.ksn2e[0,s,:nf], self.ksn2f[0,s,:nf])):
-                for m,(em,fm) in enumerate(zip(self.ksn2e[0,s,vs:],self.ksn2f[0,s,vs:])):
-                    nm2v = nm2v_re[n, m] + 1.0j*nm2v_im[n, m]
-                    nm2v = nm2v * (fn - fm) * \
-                    ( 1.0 / (comega - (em - en)) - 1.0 / (comega + (em - en)) )
-                    nm2v_re[n, m] = nm2v.real
-                    nm2v_im[n, m] = nm2v.imag
-
-            # padding m<n i.e. negative occupations' difference
-            for n in range(vs+1,nf):
-                for m in range(n-vs):
-                    nm2v_re[n,m], nm2v_im[n,m] = 0.0,0.0
+        vs, nf = self.vstart[spin], self.nfermi[spin]
+        div_eigenenergy(self.ksn2e, self.ksn2f, spin, nf, vs, comega, nm2v_re,
+                        nm2v_im, div_numba=self.div_numba,
+                        use_numba=self.use_numba)
 
         # real part
-        nb2v = self.gemm(1.0, nm2v_re, self.xvrt[s])
-        ab2v = self.gemm(1.0, self.xocc[s], nb2v, trans_a=1).reshape(self.norbs*self.norbs)
+        nb2v = self.gemm(1.0, nm2v_re, self.xvrt[spin])
+        ab2v = self.gemm(1.0, self.xocc[spin], nb2v, trans_a=1).reshape(self.norbs*self.norbs)
         chi0_re = calc_sab(self.v_dab_csr, self.cc_da_trans, ab2v)
 
         # imag part
-        nb2v = self.gemm(1.0, nm2v_im, self.xvrt[s])
-        ab2v = self.gemm(1.0, self.xocc[s], nb2v, trans_a=1).reshape(self.norbs*self.norbs)
+        nb2v = self.gemm(1.0, nm2v_im, self.xvrt[spin])
+        ab2v = self.gemm(1.0, self.xocc[spin], nb2v, trans_a=1).reshape(self.norbs*self.norbs)
         chi0_im = calc_sab(self.v_dab_csr, self.cc_da_trans, ab2v)
 
-        sp2dn[s] = chi0_re + 1.0j*chi0_im
+        sp2dn[spin] = chi0_re + 1.0j*chi0_im
       
     return dnout
 
@@ -128,3 +116,23 @@ def chi0_mv_gpu(self, v, comega=1j*0.0):
 def calc_sab(mat1, mat2, vec):
     vdp = csr_matvec(mat1, vec)
     return csr_matvec(mat2, vdp)
+
+def div_eigenenergy(ksn2e, ksn2f, spin, nf, vs, comega, nm2v_re, nm2v_im,
+                    div_numba=None, use_numba=False):
+    
+    if use_numba and div_numba is not None:
+        div_numba(ksn2e[0, spin], ksn2f[0, spin], nf, vs, comega,
+                  nm2v_re, nm2v_im)
+    else:
+        for n, (en, fn) in enumerate(zip(ksn2e[0, spin, :nf], ksn2f[0, spin, :nf])):
+            for m, (em, fm) in enumerate(zip(ksn2e[0, spin, vs:], ksn2f[0, spin, vs:])):
+                nm2v = nm2v_re[n, m] + 1.0j*nm2v_im[n, m]
+                nm2v = nm2v * (fn - fm) * \
+                ( 1.0 / (comega - (em - en)) - 1.0 / (comega + (em - en)) )
+                nm2v_re[n, m] = nm2v.real
+                nm2v_im[n, m] = nm2v.imag
+
+        # padding m<n i.e. negative occupations' difference
+        for n in range(vs+1, nf):
+            for m in range(n-vs):
+                nm2v_re[n,m], nm2v_im[n,m] = 0.0, 0.0

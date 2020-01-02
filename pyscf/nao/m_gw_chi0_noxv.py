@@ -2,7 +2,7 @@ from __future__ import division
 import sys
 from timeit import default_timer as timer
 import numpy as np
-from pyscf.nao.m_chi0_noxv import calc_sab
+from pyscf.nao.m_chi0_noxv import calc_sab, div_eigenenergy
 
 def gw_chi0_mv(self, dvin, comega=1j*0.0):
 
@@ -27,24 +27,9 @@ def gw_chi0_mv(self, dvin, comega=1j*0.0):
 
         vs, nf = self.vstart[spin], self.nfermi[spin]
 
-        if self.use_numba:
-            self.div_numba(self.ksn2e[0, spin], self.ksn2f[0, spin], nf, vs,
-                           comega, nm2v_re, nm2v_im)
-        else:
-            for n,(en,fn) in enumerate(zip(self.ksn2e[0, spin, :nf],
-                                           self.ksn2f[0, spin, :nf])):
-                for m,(em,fm) in enumerate(zip(self.ksn2e[0, spin, vs:],
-                                               self.ksn2f[0, spin, vs:])):
-                    nm2v = nm2v_re[n, m] + 1.0j*nm2v_im[n, m]
-                    nm2v = nm2v * (fn - fm) * \
-                    ( 1.0 / (comega - (em - en)) - 1.0 / (comega + (em - en)) )
-                    nm2v_re[n, m] = nm2v.real
-                    nm2v_im[n, m] = nm2v.imag
-
-            # padding m<n i.e. negative occupations' difference
-            for n in range(vs+1,nf):
-                for m in range(n-vs):  
-                    nm2v_re[n, m],nm2v_im[n, m] = 0.0, 0.0
+        div_eigenenergy(self.ksn2e, self.ksn2f, spin, nf, vs, comega, nm2v_re,
+                        nm2v_im, div_numba=self.div_numba,
+                        use_numba=self.use_numba)
 
         # real part
         nb2v = self.gemm(1.0, nm2v_re, self.xvrt[spin])
