@@ -33,7 +33,7 @@ def csr_matvec(csr, x):
       print(x.size, ncol)
       raise ValueError("wrong dimension!")
 
-    xx = np.require(x, requirements=["A", "O"])
+    xx = np.require(x, requirements=["A", "O"], dtype=csr.dtype)
     
     if csr.dtype == np.float32:
         y = np.zeros((nrow), dtype=np.float32)
