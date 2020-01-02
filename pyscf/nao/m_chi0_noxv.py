@@ -6,7 +6,7 @@ from scipy.linalg import blas
 from pyscf.nao.m_sparsetools import csr_matvec, csc_matvec, csc_matvecs
 import math
   
-def chi0_mv(self, dvin, comega=1j*0.0, dnout=None):
+def chi0_mv(self, dvin, comega=1j*0.0, dnout=None, timing=None):
     """
         Apply the non-interacting response function to a vector
         Input Parameters:
@@ -24,17 +24,20 @@ def chi0_mv(self, dvin, comega=1j*0.0, dnout=None):
     for spin in range(self.nspin):
 
         # real part
-        sab = calc_sab(self.cc_da_csr, self.v_dab_trans,
-                       sp2v[spin].real).reshape((self.norbs,self.norbs))
+        sab_re = calc_sab(self.cc_da_csr, self.v_dab_trans,
+                       sp2v[spin].real, timing[0:2]).reshape((self.norbs,self.norbs))
     
         # imaginary
-        sab = calc_sab(self.cc_da_csr, self.v_dab_trans,
-                       sp2v[spin].imag).reshape((self.norbs,self.norbs))
+        sab_im = calc_sab(self.cc_da_csr, self.v_dab_trans,
+                       sp2v[spin].imag, timing[2:4]).reshape((self.norbs,self.norbs))
 
-        ab2v_re, ab2v_im = get_ab2v(self, sab_re, sab_im, spin, comega)
+        ab2v_re, ab2v_im = get_ab2v(self, sab_re, sab_im, spin, comega,
+                                    timing[4:13])
 
-        chi0_re = calc_sab(self.v_dab_csr, self.cc_da_trans, ab2v)
-        chi0_im = calc_sab(self.v_dab_csr, self.cc_da_trans, ab2v)
+        chi0_re = calc_sab(self.v_dab_csr, self.cc_da_trans, ab2v_re,
+                           timing[13:15])
+        chi0_im = calc_sab(self.v_dab_csr, self.cc_da_trans, ab2v_im,
+                           timing[15:17])
 
         sp2dn[spin] = chi0_re + 1.0j*chi0_im
       

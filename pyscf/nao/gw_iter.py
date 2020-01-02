@@ -45,7 +45,6 @@ class gw_iter(gw):
     self.h0_vh_x_expval = self.get_h0_vh_x_expval()
     self.ncall_chi0_mv_ite = 0
     self.ncall_chi0_mv_total = 0
-    self.chi0_timing = np.zeros((17), dtype=np.float64)
 
   def si_c2(self,ww):
     """
@@ -522,10 +521,7 @@ class gw_iter(gw):
       print(__name__,'\t\t====> Performed xc_code: {}\n '.format(self.xc_code))
       print('\nConverged GW-corrected eigenvalues:\n',self.mo_energy_gw*HARTREE2EV)
 
-    with open("gw_iter_chi0_mv.txt", "w") as fl:
-        fl.write("# step  time [s]\n")
-        for it, time in enumerate(self.chi0_timing):
-            fl.write("{}: {}\n".format(it, time))
+    self.write_chi0_mv_timing("gw_iter_chi0_mv.txt")
 
     return self.etot_gw()
         

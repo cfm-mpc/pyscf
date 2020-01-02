@@ -37,6 +37,8 @@ class chi0_matvec(mf):
     self.telec = kw['telec'] if 'telec' in kw else self.telec
     self.fermi_energy = kw['fermi_energy'] if 'fermi_energy' in kw else self.fermi_energy
 
+    self.chi0_timing = np.zeros((17), dtype=np.float64)
+
     assert type(self.eps)==float
 
     self.div_numba = None
@@ -90,13 +92,17 @@ class chi0_matvec(mf):
                                    self.vstart)
 
   def apply_rf0(self, sp2v, comega=1j*0.0):
-    """ This applies the non-interacting response function to a vector (a set of vectors?) """
+    """
+    This applies the non-interacting response function to a vector
+    (a set of vectors?)
+    """
+    
     expect_shape=tuple([self.nspin*self.nprod])
     assert np.all(sp2v.shape==expect_shape), "{} {}".format(sp2v.shape,expect_shape)
     self.rf0_ncalls+=1
 
     if self.td_GPU.GPU is None:
-      return chi0_mv(self, sp2v, comega)
+      return chi0_mv(self, sp2v, comega, timing=self.chi0_timing)
     else:
       return chi0_mv_gpu(self, sp2v, comega)
 
@@ -108,6 +114,8 @@ class chi0_matvec(mf):
     for iw, comega in enumerate(comegas):
       dn0 = self.apply_rf0(vext[0], comega)
       pxx[iw] = np.dot(dn0, vext[0])
+
+    self.write_chi0_mv_timing("tddft_iter_polariz_nonin_chi0_mv.txt")
     return pxx
 
   def comp_polariz_nonin_xx_atom_split(self, comegas):
@@ -121,6 +129,7 @@ class chi0_matvec(mf):
           dn0_atom = np.zeros(self.nprod, dtype=complex)
           dn0_atom[self.pb.c2s[ia]:self.pb.c2s[ia+1]] = dn0[self.pb.c2s[ia]:self.pb.c2s[ia+1]]
           aw2pxx[ia, iw] = np.dot(dn0_atom, vext[0])
+    self.write_chi0_mv_timing("tddft_iter_polariz_nonin_split_chi0_mv.txt")
     return aw2pxx
 
   def comp_polariz_nonin_ave(self, comegas , **kw):
@@ -134,6 +143,7 @@ class chi0_matvec(mf):
         if verbosity>1: print(__name__, xyz, iw, nww, comega*HARTREE2EV)
         dn0 = self.apply_rf0(vext, comega)
         p_avg[iw] += (dn0*vext).sum()
+    self.write_chi0_mv_timing("tddft_iter_polariz_nonin_ave_chi0_mv.txt")
     return p_avg/3.0
 
   def comp_dens_nonin_along_Eext(self, comegas, Eext = np.array([1.0, 0.0, 0.0])):
@@ -169,3 +179,11 @@ class chi0_matvec(mf):
             self.dn0[xyz, iw, :] = self.apply_rf0(vext[xyz], comega)
 
     self.p0_mat = np.einsum("iwp,jp->ijw", self.dn0, vext)
+    self.write_chi0_mv_timing("tddft_iter_dens_chng_nonin_chi0_mv.txt")
+
+  def write_chi0_mv_timing(self, fname):
+
+      with open(fname, "w") as fl:
+          fl.write("# step  time [s]\n")
+          for it, time in enumerate(self.chi0_timing):
+              fl.write("{}: {}\n".format(it, time))
