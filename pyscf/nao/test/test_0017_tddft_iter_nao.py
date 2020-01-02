@@ -8,7 +8,7 @@ td = tddft_iter(label='water', cd=dname)
 try:
     from pyscf.lib import misc
     libnao_gpu = misc.load_library("libnao_gpu")
-    td_gpu = tddft_iter(label='water', cd=dname, GPU=True)
+    td_gpu = tddft_iter(label='water', cd=dname, GPU=True, dtype=np.float32)
 except:
     td_gpu = None
 
