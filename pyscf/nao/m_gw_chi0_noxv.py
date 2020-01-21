@@ -15,12 +15,15 @@ def gw_chi0_mv(self, dvin, comega=1j*0.0, timing=None):
     sab_im = calc_sab(self.cc_da_csr, self.v_dab_trans,
                       dvin.imag, timing[2:4]).reshape(self.norbs,self.norbs)
 
-    # This loop is oddly done and useless, it just take the last spin
-    # component, MUST be checked
+    ab2v_re = np.zeros((self.norbs*self.norbs), dtype=self.dtype)
+    ab2v_im = np.zeros((self.norbs*self.norbs), dtype=self.dtype)
     for spin in range(self.nspin):
 
-        ab2v_re, ab2v_im = get_ab2v(self, sab_re, sab_im, spin, comega,
-                                    timing[4:13])
+        matre, matim = get_ab2v(self, sab_re, sab_im, spin, comega,
+                                     timing[4:13])
+        ab2v_re += matre
+        ab2v_im += matim
+
         
     chi0_re = calc_sab(self.v_dab_csr, self.cc_da_trans, ab2v_re,
                        timing[13:15])
