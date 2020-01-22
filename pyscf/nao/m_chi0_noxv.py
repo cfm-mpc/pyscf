@@ -138,22 +138,26 @@ def div_eigenenergy(ksn2e, ksn2f, spin, nf, vs, comega, nm2v_re, nm2v_im,
 def get_ab2v(self, sab_re, sab_im, spin, comega, timing):
 
     t1 = timer()
-    nb2v = self.gemm(1.0, self.xocc[spin], sab_re)
+    #nb2v = self.gemm(1.0, self.xocc[spin], sab_re)
+    nb2v = self.xocc[spin].dot(sab_re)
     t2 = timer()
     timing[0] += t2 - t1
 
     t1 = timer()
-    nm2v_re = self.gemm(1.0, nb2v, self.xvrt[spin], trans_b=1)
+    #nm2v_re = self.gemm(1.0, nb2v, self.xvrt[spin], trans_b=1)
+    nm2v_re = nb2v.dot(self.xvrt[spin].T)
     t2 = timer()
     timing[1] += t2 - t1
 
     t1 = timer()
-    nb2v = self.gemm(1.0, self.xocc[spin], sab_im)
+    #nb2v = self.gemm(1.0, self.xocc[spin], sab_im)
+    nb2v = self.xocc[spin].dot(sab_im)
     t2 = timer()
     timing[2] += t2 - t1
     
     t1 = timer()
-    nm2v_im = self.gemm(1.0, nb2v, self.xvrt[spin], trans_b=1)
+    #nm2v_im = self.gemm(1.0, nb2v, self.xvrt[spin], trans_b=1)
+    nm2v_im = nb2v.dot(self.xvrt[spin].T)
     t2 = timer()
     timing[3] += t2 - t1
 
@@ -167,23 +171,27 @@ def get_ab2v(self, sab_re, sab_im, spin, comega, timing):
 
     # real part
     t1 = timer()
-    nb2v = self.gemm(1.0, nm2v_re, self.xvrt[spin])
+    #nb2v = self.gemm(1.0, nm2v_re, self.xvrt[spin])
+    nb2v = nm2v_re.dot(self.xvrt[spin])
     t2 = timer()
     timing[5] += t2 - t1
 
     t1 = timer()
-    ab2v_re = self.gemm(1.0, self.xocc[spin], nb2v, trans_a=1).reshape(self.norbs*self.norbs)
+    #ab2v_re = self.gemm(1.0, self.xocc[spin], nb2v, trans_a=1).reshape(self.norbs*self.norbs)
+    ab2v_re = self.xocc[spin].T.dot(nb2v).reshape(self.norbs*self.norbs)
     t2 = timer()
     timing[6] += t2 - t1
 
     # imag part
     t1 = timer()
-    nb2v = self.gemm(1.0, nm2v_im, self.xvrt[spin])
+    #nb2v = self.gemm(1.0, nm2v_im, self.xvrt[spin])
+    nb2v = nm2v_im.dot(self.xvrt[spin])
     t2 = timer()
     timing[7] += t2 - t1
 
     t1 = timer()
-    ab2v_im = self.gemm(1.0, self.xocc[spin], nb2v, trans_a=1).reshape(self.norbs*self.norbs)
+    #ab2v_im = self.gemm(1.0, self.xocc[spin], nb2v, trans_a=1).reshape(self.norbs*self.norbs)
+    ab2v_im = self.xocc[spin].T.dot(nb2v).reshape(self.norbs*self.norbs)
     t2 = timer()
     timing[8] += t2 - t1
 
