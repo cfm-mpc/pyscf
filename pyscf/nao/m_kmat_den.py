@@ -233,7 +233,7 @@ def kmat_den(mf, dm=None, algo=None, **kw):
                 # slower term ..
                 #bp_b2hv = dab2v_csr.T.dot(nu2v).reshape((n,n))
                 # bp_b2hv = csc_matvec(dab2v_csr.T, nu2v).reshape((n,n))
-                bp_b2hv = csr_matvec(mf.v_dab_trans, nu2v)
+                bp_b2hv = csr_matvec(mf.v_dab_trans, nu2v).reshape((n, n))
                 tt[5] = timer();
                 
                 ab2vdhv = a_bp2vd.dot(bp_b2hv)
