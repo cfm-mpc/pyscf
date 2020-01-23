@@ -48,8 +48,6 @@ void scsr_matvec(int nrow, int ncol, int nnz, int *Ap, int *Aj,
   int i, jj;
   float sum = 0.0;
 
-  //printf("nthreads = %d, nrow = %d, dyn sche = %d\n", nthreads, nrow, (nrow + 4*nthreads-1)/(4*nthreads));
-
   # pragma omp parallel \
   shared (nrow, Yx, Ap, Ax, Xx, Aj) \
   private (i, jj, sum)
@@ -74,14 +72,11 @@ void dcsr_matvec(int nrow, int ncol, int nnz, int *Ap, int *Aj,
   int i, jj;
   double sum = 0.0;
 
-
   # pragma omp parallel \
   shared (nrow, Yx, Ap, Ax, Xx, Aj) \
   private (i, jj, sum)
   {
     int nthreads = omp_get_num_threads();
-    //printf("nthreads = %d, nrow = %d, dyn sche = %d\n", nthreads, nrow, (nrow + 4*nthreads-1)/(4*nthreads));
-    //#pragma omp for schedule(dynamic)
     #pragma omp for schedule(dynamic, (nrow + 4*nthreads-1)/(4*nthreads))
     for(i = 0; i < nrow; i++){
       sum = Yx[i];
