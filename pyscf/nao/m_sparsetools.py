@@ -24,16 +24,17 @@ libsparsetools = misc.load_library("libsparsetools")
 """
 def csr_matvec(csr, x, y=None):
 
+    nrow, ncol = csr.shape
+    nnz = csr.data.shape[0]
+
     if not sparse.isspmatrix_csr(csr):
         raise Exception("Matrix must be in csr format")
 
-    nrow, ncol = csr.shape
-    nnz = csr.data.shape[0]
     if x.size != ncol:
       print(x.size, ncol)
       raise ValueError("wrong dimension!")
 
-    #xx = np.require(x, requirements=["A", "O"], dtype=csr.dtype)
+    xx = np.require(x, requirements=["A", "O"], dtype=csr.dtype)
 
     if y is None:
         y = np.zeros((nrow), dtype=csr.dtype)
@@ -43,7 +44,7 @@ def csr_matvec(csr, x, y=None):
                 csr.indptr.ctypes.data_as(POINTER(c_int)),
                 csr.indices.ctypes.data_as(POINTER(c_int)), 
                 csr.data.ctypes.data_as(POINTER(c_float)),
-                x.ctypes.data_as(POINTER(c_float)), 
+                xx.ctypes.data_as(POINTER(c_float)), 
                 y.ctypes.data_as(POINTER(c_float)))
 
     elif csr.dtype == np.float64:
@@ -51,7 +52,7 @@ def csr_matvec(csr, x, y=None):
                 csr.indptr.ctypes.data_as(POINTER(c_int)),
                 csr.indices.ctypes.data_as(POINTER(c_int)), 
                 csr.data.ctypes.data_as(POINTER(c_double)),
-                x.ctypes.data_as(POINTER(c_double)), 
+                xx.ctypes.data_as(POINTER(c_double)), 
                 y.ctypes.data_as(POINTER(c_double)))
     else:
         raise ValueError("Not implemented")
