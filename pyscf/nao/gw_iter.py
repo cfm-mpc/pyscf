@@ -1,6 +1,6 @@
 from __future__ import print_function, division
 import sys
-from copy import copy
+import copy
 from pyscf.data.nist import HARTREE2EV
 from timeit import default_timer as timer
 import numpy as np
@@ -234,6 +234,10 @@ class gw_iter(gw):
                              matvec=self.gw_vext2veffmatvec,
                              dtype=self.dtypeComplex)
 
+    #preconditioning could be using 1- kernel
+    # not sure ...
+    #self.kernel
+
     for s in range(self.nspin):
         sf_aux = np.zeros((len(self.nn[s]), self.norbs, self.nprod), dtype=self.dtypeComplex)
         inm = np.zeros((len(self.nn[s]), self.norbs, len(ww)), dtype=self.dtypeComplex)
@@ -245,7 +249,6 @@ class gw_iter(gw):
             self.ncall_chi0_mv_ite = 0
             print("freq: ", iw, "nn = {}; norbs = {}".format(len(self.nn[s]), self.norbs))
             t1 = timer()
-            #print('k_c_opt',k_c_opt.shape)
             for n in range(len(self.nn[s])):    
                 for m in range(self.norbs):
                     
@@ -258,9 +261,11 @@ class gw_iter(gw):
                     # v\chi_{0}v XVX, this should be equals to bxvx in last approach
                     a = self.kernel_sq.dot(b)
 
-                    sf_aux[n,m,:],exitCode = lgmres(k_c_opt, a,
+                    sf_aux[n,m,:], exitCode = lgmres(k_c_opt, a,
                                                      atol=self.gw_iter_tol,
-                                                     maxiter=self.maxiter)
+                                                     maxiter=self.maxiter,
+                                                     inner_m=20,
+                                                     outer_k=3)
                     if exitCode != 0:
                       print("LGMRES has not achieved convergence: exitCode = {}".format(exitCode))
             # I = XVX I_aux
@@ -280,10 +285,10 @@ class gw_iter(gw):
     print("Total call chi0_mv: ", self.ncall_chi0_mv_total)
     return snm2i
 
-  def gw_vext2veffmatvec(self,vin):
+  def gw_vext2veffmatvec(self, vin):
     dn0 = self.chi0_mv(vin, self.comega_current)
-    vcre,vcim = self.gw_applykernel_nspin1(dn0)
-    return vin - (vcre + 1.0j*vcim)         #1- v\chi_0
+    vcre, vcim = self.gw_applykernel_nspin1(dn0)
+    return vin - (vcre + 1.0j*vcim)         #1 - v\chi_0
 
   def gw_vext2veffmatvec2(self,vin):
     dn0 = self.chi0_mv(vin, self.comega_current)
@@ -431,7 +436,7 @@ class gw_iter(gw):
 
     #self.ksn2e = self.mo_energy
     sn2eval_gw = [np.copy(self.ksn2e[0,s,nn]) for s,nn in enumerate(self.nn) ]
-    sn2eval_gw_prev = copy(sn2eval_gw)
+    sn2eval_gw_prev = copy.copy(sn2eval_gw)
 
     self.nn_conv = []           # self.nn_conv - list of states to converge
     for nocc_0t,nocc_conv,nvrt_conv in zip(self.nocc_0t, self.nocc_conv, self.nvrt_conv):
@@ -453,7 +458,7 @@ class gw_iter(gw):
         
       sn2mismatch = zeros((self.nspin,self.norbs))
       for s, nn in enumerate(self.nn): sn2mismatch[s,nn] = sn2eval_gw[s][:]-sn2eval_gw_prev[s][:]
-      sn2eval_gw_prev = copy(sn2eval_gw)
+      sn2eval_gw_prev = copy.copy(sn2eval_gw)
       err = 0.0
       for s,nn_conv in enumerate(self.nn_conv): err += abs(sn2mismatch[s,nn_conv]).sum()/len(nn_conv)
 

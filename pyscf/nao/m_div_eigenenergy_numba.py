@@ -19,9 +19,9 @@ import numpy as np
 @nb.jit(nopython=True, parallel=True)
 def div_eigenenergy_numba(n2e, n2f, nfermi, vstart, comega, nm2v_re, nm2v_im):
     """
-        multiply the temporary matrix by (fn - fm) (frac{1.0}{w - (Em-En) -1} -
-            frac{1.0}{w + (Em - En)})
-        using numba
+    multiply the temporary matrix by (fn - fm) (frac{1.0}{w - (Em-En) -1} -
+        frac{1.0}{w + (Em - En)})
+    using numba
     """
 
     neigv = n2e.shape[-1]
