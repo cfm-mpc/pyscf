@@ -180,7 +180,6 @@ def kmat_den(mf, dm=None, algo=None, **kw):
         else:
             mf.dab2v = dab2v =  pb.get_dp_vertex_doubly_sparse(axis=0)
 
-        dab2v_csr = mf.v_dab
         da2cc = mf.cc_da_csr
         kmat  = np.zeros_like(dm)
         (nnd,nnp),n = da2cc.shape,dm.shape[-1]
@@ -194,13 +193,15 @@ def kmat_den(mf, dm=None, algo=None, **kw):
                     q2v = np.dot( cc, hk )
                     nu2v = da2cc * q2v
                     a_bp2vd = sparse.csr_matrix(a_ap2v * dm[s])
-                    bp_b2hv = sparse.csr_matrix((nu2v * dab2v_csr).reshape((n,n)))
+                    bp_b2hv = sparse.csr_matrix((nu2v * mf.v_dab_csr).reshape((n,n)))
                     ab2vdhv = a_bp2vd * bp_b2hv
                     kmat[s][ab2vdhv.nonzero()] += ab2vdhv.data
             
         elif len(dm.shape) == 2:
             # if spin index is absent
             # [   14.59955484   314.09553769  1113.57001527   140.44369524   687.34180544   89.05969492    28.3846701 ]
+            # C60: [ 15.85272067 288.39123102 153.34696097 578.67634735 128.22075884
+            # 583.69870308 22.44895533]
           
             tt = np.zeros(8)
             ttt = np.zeros(7)
@@ -232,8 +233,9 @@ def kmat_den(mf, dm=None, algo=None, **kw):
                 # bp_b2hv = sparse.csr_matrix((nu2v * dab2v_csr).reshape((n,n)))
                 
                 # slower term ..
-                bp_b2hv = dab2v_csr.T.dot(nu2v).reshape((n,n))
+                #bp_b2hv = dab2v_csr.T.dot(nu2v).reshape((n,n))
                 # bp_b2hv = csc_matvec(dab2v_csr.T, nu2v).reshape((n,n))
+                bp_b2hv = csr_matvec(mf.v_dab_trans, nu2v).reshape((n, n))
                 tt[5] = timer();
                 
                 ab2vdhv = a_bp2vd.dot(bp_b2hv)
