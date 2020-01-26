@@ -46,6 +46,11 @@ class gw_iter(gw):
     self.ncall_chi0_mv_ite = 0
     self.ncall_chi0_mv_total = 0
 
+    self.gw_chi0_mv = gw_chi0_mv(self.ksn2e, self.ksn2f, self.vstart, self.nfermi, self.xocc,
+                                 self.xvrt, self.cc_da_csr, self.cc_da_trans,
+                                 self.v_dab_csr, self.v_dab_trans, self.norbs, self.nspin,
+                                 self.div_numba)
+
   def si_c2(self,ww):
     """
     This computes the correlation part of the screened interaction using LinearOpt and lgmres
@@ -300,7 +305,7 @@ class gw_iter(gw):
       self.ncall_chi0_mv_ite += 1
 
       if self.td_GPU.GPU is None:
-          return gw_chi0_mv(self, dvin, comega=comega, timing=self.chi0_timing)
+          return self.gw_chi0_mv.chi0_mv(dvin, comega=comega)
       else:
           return gw_chi0_mv_gpu(self, dvin, comega=comega)
 
@@ -526,6 +531,7 @@ class gw_iter(gw):
       print(__name__,'\t\t====> Performed xc_code: {}\n '.format(self.xc_code))
       print('\nConverged GW-corrected eigenvalues:\n',self.mo_energy_gw*HARTREE2EV)
 
+    self.chi0_timing = self.gw_chi0_mv.timing
     self.write_chi0_mv_timing("gw_iter_chi0_mv.txt")
 
     return self.etot_gw()
