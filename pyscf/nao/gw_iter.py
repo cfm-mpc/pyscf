@@ -229,7 +229,7 @@ class gw_iter(gw):
     3- S_nm = XVX W XVX = XVX * I_nm
     """
 
-    from scipy.sparse.linalg import LinearOperator,lgmres
+    from scipy.sparse.linalg import LinearOperator, lgmres
     
     ww = 1j*self.ww_ia
     xvx= self.gw_xvx('blas')
@@ -246,13 +246,13 @@ class gw_iter(gw):
     for s in range(self.nspin):
         sf_aux = np.zeros((len(self.nn[s]), self.norbs, self.nprod), dtype=self.dtypeComplex)
         inm = np.zeros((len(self.nn[s]), self.norbs, len(ww)), dtype=self.dtypeComplex)
-        
         # w is complex plane
         for iw, w in enumerate(ww):
             self.comega_current = w
 
             self.ncall_chi0_mv_ite = 0
             print("freq: ", iw, "nn = {}; norbs = {}".format(len(self.nn[s]), self.norbs))
+
             t1 = timer()
             for n in range(len(self.nn[s])):    
                 for m in range(self.norbs):
@@ -266,17 +266,23 @@ class gw_iter(gw):
                     # v\chi_{0}v XVX, this should be equals to bxvx in last approach
                     a = self.kernel_sq.dot(b)
 
+                    # initial guess works pretty well!!
+                    if iw == 0:
+                        x0 = None
+                    else:
+                        x0 = copy.deepcopy(prev_sol[n, m, :])
                     sf_aux[n,m,:], exitCode = lgmres(k_c_opt, a,
                                                      atol=self.gw_iter_tol,
                                                      maxiter=self.maxiter,
-                                                     inner_m=20,
-                                                     outer_k=3)
+                                                     x0=x0)
                     if exitCode != 0:
                       print("LGMRES has not achieved convergence: exitCode = {}".format(exitCode))
             # I = XVX I_aux
             t2 = timer()
+            prev_sol = copy.deepcopy(sf_aux)
             print("time for lgmres loop: ", t2-t1)
             print("number call chi0_mv: ", self.ncall_chi0_mv_ite)
+            print("Average call chi0_mv: ", self.ncall_chi0_mv_ite/(len(self.nn[s])*self.norbs))
 
             self.ncall_chi0_mv_total += self.ncall_chi0_mv_ite
             
