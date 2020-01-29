@@ -27,6 +27,10 @@ def csr_matvec(csr, x, y=None):
     nrow, ncol = csr.shape
     nnz = csr.data.shape[0]
 
+    # for small sizes scipy is way faster
+    if nnz < 500000:
+        return csr.dot(x)
+
     if not sparse.isspmatrix_csr(csr):
         raise Exception("Matrix must be in csr format")
 
