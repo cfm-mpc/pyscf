@@ -52,8 +52,9 @@ void scsr_matvec(int nrow, int ncol, int nnz, int *Ap, int *Aj,
   shared (nrow, Yx, Ap, Ax, Xx, Aj) \
   private (i, jj, sum)
   {
-    int nthreads = omp_get_num_threads();
-    #pragma omp for schedule(dynamic, (nrow + 4*nthreads-1)/(4*nthreads))
+    #pragma omp for schedule(dynamic)
+    //, (nrow + 4*nthreads-1)/(4*nthreads))
+    //int nthreads = omp_get_num_threads();
     for(i = 0; i < nrow; i++){
       sum = Yx[i];
       for(jj = Ap[i]; jj < Ap[i+1]; jj++){
@@ -76,8 +77,9 @@ void dcsr_matvec(int nrow, int ncol, int nnz, int *Ap, int *Aj,
   shared (nrow, Yx, Ap, Ax, Xx, Aj) \
   private (i, jj, sum)
   {
-    int nthreads = omp_get_num_threads();
-    #pragma omp for schedule(dynamic, (nrow + 4*nthreads-1)/(4*nthreads))
+    #pragma omp for schedule(dynamic)
+    //, (nrow + 4*nthreads-1)/(4*nthreads))
+    //int nthreads = omp_get_num_threads();
     for(i = 0; i < nrow; i++){
       sum = Yx[i];
       for(jj = Ap[i]; jj < Ap[i+1]; jj++){
