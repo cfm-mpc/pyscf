@@ -1,0 +1,18 @@
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -ffast-math")
+
+enable_language(Fortran)
+set(CMAKE_Fortran_FLAGS "-pedantic -O2 -Wall -ffree-line-length-0")
+
+if (DEFINED LAPACK_LIBRARIES)
+  message("LAPACK libraries are defined (in arch.inc):")
+else()
+  message("Looking for LAPACK libraries...")
+  find_package(LAPACK REQUIRED)
+endif()
+message("LAPACK libraries: ${LAPACK_LIBRARIES}")
+
+set(FFTW_LIBRARIES "-L/usr/lib/x86_64-linux-gnu -lfftw3 -lfftw3f")
+message("FFTW_LIBRARIES: ${FFTW_LIBRARIES}")
+
+add_subdirectory(nao)
+add_subdirectory(sparsetools)
