@@ -48,7 +48,7 @@ def csr_matvec_ctype(csr, x, y):
     else:
         raise ValueError("Unsupported dtype")
 
-class gw_chi0_mv():
+class gw_chi0_matvec():
 
     def __init__(self, ksn2e, ksn2f, vstart, nfermi, xocc, xvrt, cc_da_csr, cc_da_trans,
                  v_dab_csr, v_dab_trans, norbs, nspin, div_numba):
@@ -162,7 +162,7 @@ class gw_chi0_mv():
 
         return self.chi0_re + 1.0j*self.chi0_im
 
-def chi0_mv_ref(self, dvin, comega=1j*0.0, timing=None):
+def gw_chi0_mv(self, dvin, comega=1j*0.0, timing=None):
 
     # real part
     sab_re = calc_sab(self.cc_da_csr, self.v_dab_trans,
