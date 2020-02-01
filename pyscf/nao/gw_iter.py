@@ -238,6 +238,7 @@ class gw_iter(gw):
     # not sure ...
     #self.kernel
 
+    x0 = None
     for s in range(self.nspin):
         sf_aux = np.zeros((len(self.nn[s]), self.norbs, self.nprod), dtype=self.dtypeComplex)
         inm = np.zeros((len(self.nn[s]), self.norbs, len(ww)), dtype=self.dtypeComplex)
@@ -262,10 +263,11 @@ class gw_iter(gw):
                     a = self.kernel_sq.dot(b)
 
                     # initial guess works pretty well!!
-                    if iw == 0:
-                        x0 = None
-                    else:
-                        x0 = copy.deepcopy(prev_sol[n, m, :])
+                    if self.use_initial_guess_ite_solver:
+                        if iw == 0:
+                            x0 = None
+                        else:
+                            x0 = copy.deepcopy(prev_sol[n, m, :])
                     sf_aux[n,m,:], exitCode = lgmres(k_c_opt, a,
                                                      atol=self.gw_iter_tol,
                                                      maxiter=self.maxiter,
@@ -274,7 +276,8 @@ class gw_iter(gw):
                       print("LGMRES has not achieved convergence: exitCode = {}".format(exitCode))
             # I = XVX I_aux
             t2 = timer()
-            prev_sol = copy.deepcopy(sf_aux)
+            if self.use_initial_guess_ite_solver:
+                prev_sol = copy.deepcopy(sf_aux)
             print("time for lgmres loop: ", t2-t1)
             print("number call chi0_mv: ", self.ncall_chi0_mv_ite)
             print("Average call chi0_mv: ", self.ncall_chi0_mv_ite/(len(self.nn[s])*self.norbs))

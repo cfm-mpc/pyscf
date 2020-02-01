@@ -19,6 +19,12 @@ class chi0_matvec(mf):
 
     self.dtype = kw['dtype'] if 'dtype' in kw else np.float64
     for x in ['dtype']: kw.pop(x, None)
+
+    if "use_initial_guess_ite_solver" in kw:
+        self.use_initial_guess_ite_solver = kw["use_initial_guess_ite_solver"]
+    else:
+        self.use_initial_guess_ite_solver = False
+
     mf.__init__(self, dtype=self.dtype, **kw)
 
     if self.dtype == np.float32:
