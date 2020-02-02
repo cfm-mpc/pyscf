@@ -416,7 +416,8 @@ def save_COO(fname, coo):
     dico["data"] = coo.data
     dico["shape"] = coo.shape
 
-    pickle.dump(dico, open(fname, "wb"))
+    with open(fname, "wb") as fl:
+        pickle.dump(dico, fl)
 
 #
 # Example of reading pySCF mean-field calculation.
