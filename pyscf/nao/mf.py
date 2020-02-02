@@ -53,6 +53,9 @@ class mf(nao):
       self.v_dab = pb.get_dp_vertex_sparse(dtype=self.dtype)
       self.cc_da = cc = pb.get_da2cc_sparse(dtype=self.dtype)
 
+      save_COO("v_dab.pckl", self.v_dab)
+      save_COO("cc_da.pckl", self.cc_da)
+
       # CSR for matvec operations
       # Hopefully, the csr and csc matrix should just be pointers to the COO
       # must be checked ...
@@ -403,6 +406,18 @@ class mf(nao):
     s = np.sqrt(ss+0.25) - 0.5
     
     return ss, s*2+1
+
+def save_COO(fname, coo):
+
+    import pickle
+    dico = {}
+    dico["row"] = coo.row
+    dico["col"] = coo.col
+    dico["data"] = coo.data
+    dico["shape"] = coo.shape
+
+    with open(fname, "wb") as fl:
+        pickle.dump(dico, fl)
 
 #
 # Example of reading pySCF mean-field calculation.

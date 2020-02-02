@@ -22,21 +22,28 @@ libsparsetools = misc.load_library("libsparsetools")
 """
     Wrapper to sparse matrix operations from scipy implemented with openmp
 """
-def csr_matvec(csr, x):
+def csr_matvec(csr, x, y=None):
+
+    nrow, ncol = csr.shape
+    nnz = csr.data.shape[0]
+
+    # for small sizes scipy is way faster
+    if nnz < 500000:
+        return csr.dot(x)
 
     if not sparse.isspmatrix_csr(csr):
         raise Exception("Matrix must be in csr format")
 
-    nrow, ncol = csr.shape
-    nnz = csr.data.shape[0]
     if x.size != ncol:
       print(x.size, ncol)
       raise ValueError("wrong dimension!")
 
     xx = np.require(x, requirements=["A", "O"], dtype=csr.dtype)
+
+    if y is None:
+        y = np.zeros((nrow), dtype=csr.dtype)
     
     if csr.dtype == np.float32:
-        y = np.zeros((nrow), dtype=np.float32)
         libsparsetools.scsr_matvec(c_int(nrow), c_int(ncol), c_int(nnz), 
                 csr.indptr.ctypes.data_as(POINTER(c_int)),
                 csr.indices.ctypes.data_as(POINTER(c_int)), 
@@ -45,7 +52,6 @@ def csr_matvec(csr, x):
                 y.ctypes.data_as(POINTER(c_float)))
 
     elif csr.dtype == np.float64:
-        y = np.zeros((nrow), dtype=np.float64)
         libsparsetools.dcsr_matvec(c_int(nrow), c_int(ncol), c_int(nnz), 
                 csr.indptr.ctypes.data_as(POINTER(c_int)),
                 csr.indices.ctypes.data_as(POINTER(c_int)), 
