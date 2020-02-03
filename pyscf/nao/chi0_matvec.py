@@ -98,8 +98,7 @@ class chi0_matvec(mf):
         self.moms0,self.moms1 = pb.comp_moments(dtype=self.dtype)
 
         if self.GPU:
-            raise ValueError("GPU implementation broken")
-            # self.initialize_chi0_matvec_GPU()
+            self.initialize_chi0_matvec_GPU()
         #self.td_GPU = tddft_iter_gpu_c(GPU, self.mo_coeff[0,0,:,:,0], self.ksn2f, 
         #                               self.ksn2e, self.norbs, self.nfermi, self.nprod,
         #                               self.vstart)

@@ -308,7 +308,7 @@ class gw_iter(gw):
 
       self.ncall_chi0_mv_ite += 1
 
-      if self.td_GPU.GPU is None:
+      if self.GPU is None:
           return gw_chi0_mv(self, dvin, comega=comega, timing=self.chi0_timing)
       else:
           return gw_chi0_mv_gpu(self, dvin, comega=comega)
