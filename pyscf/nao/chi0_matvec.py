@@ -12,7 +12,9 @@ from pyscf.nao.m_chi0_noxv import chi0_mv_gpu, chi0_mv
 from pyscf.data.nist import HARTREE2EV
 
 class chi0_matvec(mf):
-  """ A class to organize the application of non-interacting response to a vector """
+    """
+    A class to organize the application of non-interacting response to a vector
+    """
 
     def __init__(self, **kw):
         from pyscf.nao.m_fermi_dirac import fermi_dirac_occupations
@@ -96,10 +98,21 @@ class chi0_matvec(mf):
         self.moms0,self.moms1 = pb.comp_moments(dtype=self.dtype)
 
         if self.GPU:
-            self.chi0_matvec_GPU()
+            raise ValueError("GPU implementation broken")
+            # self.initialize_chi0_matvec_GPU()
         #self.td_GPU = tddft_iter_gpu_c(GPU, self.mo_coeff[0,0,:,:,0], self.ksn2f, 
         #                               self.ksn2e, self.norbs, self.nfermi, self.nprod,
         #                               self.vstart)
+
+    def initialize_chi0_matvec_GPU(self):
+
+        try:
+            import cupy as cp
+        except RuntimeError as err:
+            raise RuntimeError("Could not import cupy: {}".format(err))
+
+        self.xocc_gpu = cp.asarray(self.xocc)
+        self.xvrt_gpu = cp.asarray(self.xvrt)
 
     def apply_rf0(self, sp2v, comega=1j*0.0):
         """
@@ -108,11 +121,11 @@ class chi0_matvec(mf):
         """
         
         expect_shape=tuple([self.nspin*self.nprod])
-        assert np.all(sp2v.shape==expect_shape),
-                      "{} {}".format(sp2v.shape,expect_shape)
+        assert np.all(sp2v.shape == expect_shape),\
+                "{} {}".format(sp2v.shape,expect_shape)
         self.rf0_ncalls+=1
 
-        if self.td_GPU.GPU is None:
+        if self.GPU is None:
             return chi0_mv(self, sp2v, comega, timing=self.chi0_timing)
         else:
             return chi0_mv_gpu(self, sp2v, comega)
