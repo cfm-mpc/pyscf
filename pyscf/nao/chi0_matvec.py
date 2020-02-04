@@ -1,5 +1,5 @@
 from __future__ import print_function, division
-from copy import copy
+import copy
 import numpy as np
 from numpy import array, argmax
 from scipy.sparse import csr_matrix, coo_matrix
@@ -51,9 +51,12 @@ class chi0_matvec(mf):
         assert isinstance(self.eps, float)
 
         self.div_numba = None
-        if self.use_numba:
+        if self.use_numba and not self.GPU:
             from pyscf.nao.m_div_eigenenergy_numba import div_eigenenergy_numba
             self.div_numba = div_eigenenergy_numba
+        elif self.GPU:
+            from pyscf.nao.m_div_eigenenergy_numba import div_eigenenergy_gpu
+            self.div_numba = div_eigenenergy_gpu
 
         if hasattr(self, 'hsx') and self.dealloc_hsx: self.hsx.deallocate()     # deallocate hsx
 
@@ -110,8 +113,15 @@ class chi0_matvec(mf):
         except RuntimeError as err:
             raise RuntimeError("Could not import cupy: {}".format(err))
 
-        self.xocc_gpu = cp.asarray(self.xocc)
-        self.xvrt_gpu = cp.asarray(self.xvrt)
+        
+        self.xocc_gpu = []
+        self.xvrt_gpu = []
+        self.ksn2e_gpu = cp.asarray(self.ksn2e)
+        self.ksn2f_gpu = cp.asarray(self.ksn2f)
+
+        for spin in range(self.nspin):
+            self.xocc_gpu.append(cp.asarray(self.xocc[spin]))
+            self.xvrt_gpu.append(cp.asarray(self.xvrt[spin]))
 
     def apply_rf0(self, sp2v, comega=1j*0.0):
         """

@@ -196,6 +196,7 @@ def gw_chi0_mv(self, dvin, comega=1j*0.0, timing=None):
     return chi0_re + 1.0j*chi0_im
 
 def gw_chi0_mv_gpu(self, dvin, comega=1j*0.0, timing=None):
+    import cupy as cp
 
     assert self.nspin == 1
     spin = 0
@@ -203,28 +204,32 @@ def gw_chi0_mv_gpu(self, dvin, comega=1j*0.0, timing=None):
     # real part
     vdp = csr_matvec(self.cc_da_csr, dvin.real)
     sab_re = csr_matvec(self.v_dab_trans, vdp).reshape((self.norbs,self.norbs))
+    sab_re_gpu = cp.asarray(sab_re)
 
+    nb2v = self.xocc_gpu[spin].dot(sab_re_gpu)
+    nm2v_re = nb2v.dot(self.xvrt_gpu[spin].T)
+    
     # imaginary
     vdp = csr_matvec(self.cc_da_csr, dvin.imag)
     sab_im = csr_matvec(self.v_dab_trans, vdp).reshape((self.norbs,self.norbs))
+    sab_im_gpu = cp.asarray(sab_im)
 
-    nb2v = self.xocc[spin].dot(sab_re)
-    nm2v_re = nb2v.dot(self.xvrt[spin].T)
-
-    nb2v = self.xocc[spin].dot(sab_im)
-    nm2v_im = nb2v.dot(self.xvrt[spin].T)
+    nb2v = self.xocc_gpu[spin].dot(sab_im_gpu)
+    nm2v_im = nb2v.dot(self.xvrt_gpu[spin].T)
 
     vs, nf = self.vstart[spin], self.nfermi[spin]
-    self.div_numba(self.ksn2e, self.ksn2f, spin, nf, vs, comega, nm2v_re,
-                   nm2v_im, div_numba=self.div_numba,
-                   use_numba=self.use_numba)
+    div_eigenenergy(self.ksn2e_gpu, self.ksn2f_gpu, spin, nf, vs, comega,
+                    nm2v_re, nm2v_im, div_numba=self.div_numba,
+                    use_numba=self.use_numba)
 
-    nb2v = nm2v_re.dot(self.xvrt[spin])
-    ab2v_re = self.xocc[spin].T.dot(nb2v).reshape(self.norbs*self.norbs)
-
-    nb2v = nm2v_im.dot(self.xvrt[spin])
-    ab2v_im = self.xocc[spin].T.dot(nb2v).reshape(self.norbs*self.norbs)
-
+    nb2v = nm2v_re.dot(self.xvrt_gpu[spin])
+    ab2v = self.xocc_gpu[spin].T.dot(nb2v)
+    ab2v_re = cp.asnumpy(ab2v).reshape(self.norbs*self.norbs)
+    
+    nb2v = nm2v_im.dot(self.xvrt_gpu[spin])
+    ab2v = self.xocc_gpu[spin].T.dot(nb2v)
+    ab2v_im = cp.asnumpy(ab2v).reshape(self.norbs*self.norbs)
+    
     # real part
     chi0_re = calc_sab(self.v_dab_csr, self.cc_da_trans, ab2v_re, timing[13:15])
 

@@ -51,6 +51,7 @@ class gw_iter(gw):
     This computes the correlation part of the screened interaction using LinearOpt and lgmres
     lgmres method is much slower than np.linalg.solve !!
     """
+    print("!!!!!!!!!!!!!!!!!!!!!!!!!!! si_c2")
     import numpy as np
     from scipy.sparse.linalg import lgmres
     from scipy.sparse.linalg import LinearOperator
@@ -225,6 +226,10 @@ class gw_iter(gw):
     """
 
     from scipy.sparse.linalg import LinearOperator, lgmres
+
+    print("!!!!!!!!!!!!!!!!!!!!!!!!!!! get_snmw2sf_iter")
+    if self.GPU:
+        self.initialize_chi0_matvec_GPU()
     
     ww = 1j*self.ww_ia
     xvx= self.gw_xvx('blas')
@@ -233,6 +238,7 @@ class gw_iter(gw):
     k_c_opt = LinearOperator((self.nprod,self.nprod),
                              matvec=self.gw_vext2veffmatvec,
                              dtype=self.dtypeComplex)
+
 
     #preconditioning could be using 1- kernel
     # not sure ...
@@ -268,6 +274,7 @@ class gw_iter(gw):
                             x0 = None
                         else:
                             x0 = copy.deepcopy(prev_sol[n, m, :])
+
                     sf_aux[n,m,:], exitCode = lgmres(k_c_opt, a,
                                                      atol=self.gw_iter_tol,
                                                      maxiter=self.maxiter,
@@ -311,7 +318,7 @@ class gw_iter(gw):
       if self.GPU is None:
           return gw_chi0_mv(self, dvin, comega=comega, timing=self.chi0_timing)
       else:
-          return gw_chi0_mv_gpu(self, dvin, comega=comega)
+          return gw_chi0_mv_gpu(self, dvin, comega=comega, timing=self.chi0_timing)
 
   def gw_applykernel_nspin1(self,dn):
     daux  = np.zeros(self.nprod, dtype=self.dtype)
@@ -331,19 +338,23 @@ class gw_iter(gw):
     
     returns V_{eff} as list for all n states(self.nn[s]).
     """
+    print("!!!!!!!!!!!!!!!!!!!!!!!!!!! gw_comp_veff")
     
-    from scipy.sparse.linalg import LinearOperator
+    from scipy.sparse.linalg import LinearOperator, lgmres
+    if self.GPU:
+        self.initialize_chi0_matvec_GPU()
+
     self.comega_current = comega
     veff_op = LinearOperator((self.nprod,self.nprod),
                              matvec=self.gw_vext2veffmatvec,
                              dtype=self.dtypeComplex)
 
-    from scipy.sparse.linalg import lgmres
     resgm, info = lgmres(veff_op,
                          np.require(vext, dtype=self.dtypeComplex, requirements='C'),
                          atol=self.gw_iter_tol, maxiter=self.maxiter)
     if info != 0:
       print("LGMRES has not achieved convergence: exitCode = {}".format(info))
+
     return resgm
 
   def check_veff(self, optimize="greedy"):
@@ -416,23 +427,37 @@ class gw_iter(gw):
     """
     
     from scipy.sparse.linalg import lgmres, LinearOperator
+
+    if self.GPU:
+        self.initialize_chi0_matvec_GPU()
+
     v_pab = self.pb.get_ac_vertex_array()
     sn2res = [np.zeros_like(n2w, dtype=self.dtype) for n2w in sn2w ]   
-    k_c_opt = LinearOperator((self.nprod,self.nprod), matvec=self.gw_vext2veffmatvec, dtype=self.dtypeComplex)  
+    k_c_opt = LinearOperator((self.nprod,self.nprod),
+                             matvec=self.gw_vext2veffmatvec,
+                             dtype=self.dtypeComplex)  
+    
     for s,ww in enumerate(sn2w):
+      
       x = self.mo_coeff[0,s,:,:,0]
       for nl,(n,w) in enumerate(zip(self.nn[s],ww)):
         lsos = self.lsofs_inside_contour(self.ksn2e[0,s,:],w,self.dw_excl)
         zww = array([pole[0] for pole in lsos])
-        xv = np.dot(v_pab,x[n])
+        xv = v_pab.dot(x[n])
+        
         for pole, z_real in zip(lsos, zww):
           self.comega_current = z_real
-          xvx = np.dot(xv, x[pole[1]])
-          a = np.dot(self.kernel_sq, xvx)
+          xvx = xv.dot(x[pole[1]])
+          
+          a = self.kernel_sq.dot(xvx)
           b = self.chi0_mv(a, self.comega_current)
-          a = np.dot(self.kernel_sq, b)
-          si_xvx, exitCode = lgmres(k_c_opt, a, atol=self.gw_iter_tol, maxiter=self.maxiter)
-          if exitCode != 0: print("LGMRES has not achieved convergence: exitCode = {}".format(exitCode))
+          
+          a = self.kernel_sq.dot(b)
+          si_xvx, exitCode = lgmres(k_c_opt, a, atol=self.gw_iter_tol,
+                                    maxiter=self.maxiter)
+          
+          if exitCode != 0:
+              print("LGMRES has not achieved convergence: exitCode = {}".format(exitCode))
           contr = np.dot(xvx, si_xvx)
           sn2res[s][nl] += pole[2]*contr.real
     

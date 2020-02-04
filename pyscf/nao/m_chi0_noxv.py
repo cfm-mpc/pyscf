@@ -116,8 +116,8 @@ def calc_sab(mat1, mat2, vec, timing):
     return sab
 
 def div_eigenenergy(ksn2e, ksn2f, spin, nf, vs, comega, nm2v_re, nm2v_im,
-                    div_numba=None, use_numba=False):
-    
+                    div_numba=None, use_numba=False, gpu=False):
+
     if use_numba and div_numba is not None:
         div_numba(ksn2e[0, spin], ksn2f[0, spin], nf, vs, comega,
                   nm2v_re, nm2v_im)
