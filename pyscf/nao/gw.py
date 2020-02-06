@@ -41,8 +41,8 @@ class gw(scf):
     self.bsize = kw['bsize'] if 'bsize' in kw else min(40, self.norbs)
     self.tdscf = kw['tdscf'] if 'tdscf' in kw else None
     self.frozen_core = kw['frozen_core'] if 'frozen_core' in kw else None
-    self.write_w = kw['write_w'] if 'write_w' in kw else False
-    self.restart_w = kw['restart_w'] if 'restart_w' in kw else False
+    self.write_R = kw['write_R'] if 'write_R' in kw else False
+    self.restart = kw['restart'] if 'restart' in kw else False
     if sum(self.nelec) == 1:
       raise RuntimeError('Not implemented H, sorry :-) Look into scf/__init__.py for HF1e class...')
     
@@ -258,9 +258,9 @@ class gw(scf):
       
       snmw2sf.append(nmw2sf)
 
-      if self.write_w:
+      if self.write_R:
         from pyscf.nao.m_restart import write_rst_h5py
-        print(write_rst_h5py(data = snmw2sf, filename= 'SCREENED_COULOMB.hdf5'))
+        print(write_rst_h5py (data=snm2i, value='screened_interactions'))
     
     return snmw2sf
 
@@ -272,9 +272,9 @@ class gw(scf):
     """
 
     if not hasattr(self, 'snmw2sf'):
-      if self.restart_w is True:
+      if self.restart is True:
         from pyscf.nao.m_restart import read_rst_h5py
-        self.snmw2sf, msg = read_rst_h5py()
+        self.snmw2sf, msg = read_rst_h5py(value='screened_interactions',filename= 'RESTART.hdf5')
         print(msg)
       else:
         self.snmw2sf = self.get_snmw2sf()
@@ -389,7 +389,7 @@ class gw(scf):
         GW corection for eigenvalues STARTED:
         """.format(self.niter_max_ev, self.nff_ia, np.size(self.gw_corr_int(sn2eval_gw)),
                    np.size(self.gw_corr_int(sn2eval_gw)))
-
+      print(mess)
     for i in range(self.niter_max_ev):
       sn2i = self.gw_corr_int(sn2eval_gw)
       sn2r = self.gw_corr_res(sn2eval_gw)

@@ -274,7 +274,7 @@ class gw_iter(gw):
                                                      x0=x0)
                     if exitCode != 0:
                       print("LGMRES has not achieved convergence: exitCode = {}".format(exitCode))
-            # I = XVX I_aux
+
             t2 = timer()
             if self.use_initial_guess_ite_solver:
                 prev_sol = copy.deepcopy(sf_aux)
@@ -283,13 +283,14 @@ class gw_iter(gw):
             print("Average call chi0_mv: ", self.ncall_chi0_mv_ite/(len(self.nn[s])*self.norbs))
 
             self.ncall_chi0_mv_total += self.ncall_chi0_mv_ite
-            
+
+            # I = XVX I_aux
             inm[:,:,iw] = np.einsum('nmp,nmp->nm', xvx[s], sf_aux, optimize=optimize)
         snm2i.append(np.real(inm))
 
-    if (self.write_w==True):
+    if (self.write_R==True):
         from pyscf.nao.m_restart import write_rst_h5py
-        print(write_rst_h5py(data = snm2i, filename= 'SCREENED_COULOMB.hdf5'))
+        print(write_rst_h5py (data=snm2i, value='screened_interactions'))
 
     print("Total call chi0_mv: ", self.ncall_chi0_mv_total)
     return snm2i
@@ -393,9 +394,9 @@ class gw_iter(gw):
     uses get_snmw2sf_iter
     """
 
-    if self.restart_w is True: 
+    if self.restart is True: 
       from pyscf.nao.m_restart import read_rst_h5py
-      self.snmw2sf, msg = read_rst_h5py()
+      self.snmw2sf, msg = read_rst_h5py(value='screened_interactions',filename= 'RESTART.hdf5')
       print(msg)  
 
       if self.snmw2sf is None:
@@ -421,6 +422,8 @@ class gw_iter(gw):
       for nl,(n,w) in enumerate(zip(self.nn[s],ww)):
         lsos = self.lsofs_inside_contour(self.ksn2e[0,s,:],w,self.dw_excl)
         zww = array([pole[0] for pole in lsos])
+        stw = array([pole[1] for pole in lsos])
+        print('states located inside contour: #',stw)
         xv = np.dot(v_pab,x[n])
         for pole, z_real in zip(lsos, zww):
           self.comega_current = z_real
@@ -527,6 +530,11 @@ class gw_iter(gw):
       self.mo_energy_gw[0,s,:] = np.sort(self.mo_energy_gw[0,s,:])
       for n,m in enumerate(argsrt): self.mo_coeff_gw[0,s,n] = self.mo_coeff[0,s,m]
  
+    if (self.write_R==True):
+        from pyscf.nao.m_restart import write_rst_h5py
+        write_rst_h5py (value='QP_energies', data=self.mo_energy_gw)
+        write_rst_h5py (value='G0W0_eigenfuns', data=self.mo_coeff_gw)
+
     self.xc_code = 'GW'
     if self.verbosity>3:
       print(__name__,'\t\t====> Performed xc_code: {}\n '.format(self.xc_code))
