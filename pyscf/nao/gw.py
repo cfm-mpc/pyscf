@@ -86,7 +86,7 @@ class gw(scf):
     if self.verbosity>0:
       print(__name__,'\t\t====> Indices of states to be corrected start from {} to {} \n'.format(self.start_st,self.finish_st))
     self.nn = [range(self.start_st[s], self.finish_st[s]) for s in range(self.nspin)] # list of states
-    
+    self.vst= [self.norbs - self.nfermi[s] for s in range(self.nspin)]   
 
     if 'nocc_conv' in kw:
       s2nocc_conv = [kw['nocc_conv']] if type(kw['nocc_conv'])==int else kw['nocc_conv']

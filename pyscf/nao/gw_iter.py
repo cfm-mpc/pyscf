@@ -42,6 +42,11 @@ class gw_iter(gw):
     self.gw_iter_tol = kw['gw_iter_tol'] if 'gw_iter_tol' in kw else 1e-4
     self.maxiter = kw['maxiter'] if 'maxiter' in kw else 1000
 
+    self.limited_nbnd = kw['limited_nbnd'] if 'limited_nbnd' in kw else False
+    if (self.limited_nbnd==True and min (self.vst) < 50 ):
+        print('Too few virtual states, limited_nbnd ignored!')
+        self.limited_nbnd= False
+
     self.h0_vh_x_expval = self.get_h0_vh_x_expval()
     self.ncall_chi0_mv_ite = 0
     self.ncall_chi0_mv_total = 0
@@ -214,7 +219,7 @@ class gw_iter(gw):
 
     return xvx
 
-  def get_snmw2sf_iter(self, optimize="greedy"):
+  def get_snmw2sf_iter(self, optimize="greedy", nbnd=None):
     """ 
     This computes a matrix elements of W_c: <\Psi(r)\Psi(r) | W_c(r,r',\omega) |\Psi(r')\Psi(r')>.
     sf[spin,n,m,w] = X^n V_mu X^m W_mu_nu X^n V_nu X^m,
@@ -242,12 +247,14 @@ class gw_iter(gw):
     for s in range(self.nspin):
         sf_aux = np.zeros((len(self.nn[s]), self.norbs, self.nprod), dtype=self.dtypeComplex)
         inm = np.zeros((len(self.nn[s]), self.norbs, len(ww)), dtype=self.dtypeComplex)
+
+        nbnd = int(self.vst[s]*0.7) if nbnd is True else self.norbs #considers half of virtual states
         # w is complex plane
         for iw, w in enumerate(ww):
             self.comega_current = w
 
             self.ncall_chi0_mv_ite = 0
-            print("freq: ", iw, "nn = {}; norbs = {}".format(len(self.nn[s]), self.norbs))
+            if self.verbosity>3: print("freq: ", iw, "nn = {}; norbs = {}".format(len(self.nn[s]), self.norbs))
 
             t1 = timer()
             for n in range(len(self.nn[s])):    
@@ -262,25 +269,34 @@ class gw_iter(gw):
                     # v\chi_{0}v XVX, this should be equals to bxvx in last approach
                     a = self.kernel_sq.dot(b)
 
-                    # initial guess works pretty well!!
-                    if self.use_initial_guess_ite_solver:
-                        if iw == 0:
-                            x0 = None
-                        else:
-                            x0 = copy.deepcopy(prev_sol[n, m, :])
-                    sf_aux[n,m,:], exitCode = lgmres(k_c_opt, a,
-                                                     atol=self.gw_iter_tol,
-                                                     maxiter=self.maxiter,
-                                                     x0=x0)
-                    if exitCode != 0:
-                      print("LGMRES has not achieved convergence: exitCode = {}".format(exitCode))
+                    #considers only part v\chi_{0}v XVX for virtual states above nbnd
+                    if (self.limited_nbnd==True and m>=nbnd ):
+                        sf_aux[n,m,:] = a
+                        
+                    else:
+
+                        # initial guess works pretty well!!
+                        if self.use_initial_guess_ite_solver:
+                            if iw == 0:
+                                x0 = None
+                            else:
+                                x0 = copy.deepcopy(prev_sol[n, m, :])
+                        sf_aux[n,m,:], exitCode = lgmres(k_c_opt, a,
+                                                         atol=self.gw_iter_tol,
+                                                         maxiter=self.maxiter,
+                                                         x0=x0)
+                        if exitCode != 0:
+                          print("LGMRES has not achieved convergence: exitCode = {}".format(exitCode))
+                
 
             t2 = timer()
             if self.use_initial_guess_ite_solver:
                 prev_sol = copy.deepcopy(sf_aux)
-            print("time for lgmres loop: ", t2-t1)
-            print("number call chi0_mv: ", self.ncall_chi0_mv_ite)
-            print("Average call chi0_mv: ", self.ncall_chi0_mv_ite/(len(self.nn[s])*self.norbs))
+
+            if self.verbosity>3:
+                print("time for lgmres loop: ", t2-t1)
+                print("number call chi0_mv: ", self.ncall_chi0_mv_ite)
+                print("Average call chi0_mv: ", self.ncall_chi0_mv_ite/(len(self.nn[s])*self.norbs))
 
             self.ncall_chi0_mv_total += self.ncall_chi0_mv_ite
 
@@ -403,8 +419,13 @@ class gw_iter(gw):
           self.snmw2sf = self.get_snmw2sf_iter()
 
     else:
-      self.snmw2sf = self.get_snmw2sf_iter()
-    
+
+      if self.limited_nbnd is True:
+        self.snmw2sf = self.get_snmw2sf_iter(nbnd=True)
+        print('Limited number of virtual states are considered in full matrix of W_c')
+      else:
+        self.snmw2sf = self.get_snmw2sf_iter()
+
     return self.gw_corr_int(sn2w, eps=None)
 
   def gw_corr_res_iter(self, sn2w):
@@ -551,15 +572,17 @@ if __name__=='__main__':
     from pyscf import gto, scf
     from pyscf.nao import gw_iter   
 
-    mol = gto.M(atom='''O 0.0, 0.0, 0.622978 ; O 0.0, 0.0, -0.622978''', basis='ccpvdz',spin=2)
+    mol = gto.M(atom='''O 0.0, 0.0, 0.622978 ; O 0.0, 0.0, -0.622978''', basis='ccpvtz',spin=2)
     mf = scf.UHF(mol)
     mf.kernel()
 
-    gw = gw_iter(mf=mf, gto=mol, verbosity=1, niter_max_ev=1, nff_ia=5, nvrt=1, nocc=1, gw_iter_tol=1e-04)
+    gw = gw_iter(mf=mf, gto=mol, verbosity=1, niter_max_ev=1, nff_ia=5, nvrt=3, nocc=3, gw_iter_tol=1e-04, limited_nbnd=True)
 
-    gw_it = gw.get_snmw2sf_iter()
     gw_ref = gw.get_snmw2sf()
+    gw_it = gw.get_snmw2sf_iter()
+    #gw_lim = gw.get_snmw2sf_iter(nbnd=True)
     print('Comparison between matrix element of W obtained from gw_iter and gw classes: ', np.allclose(gw_it, gw_ref, atol= gw.gw_iter_tol)) 
+    print([abs(gw_it[s]-gw_ref[s]).sum() for s in range(gw.nspin)])  
 
     sn2eval_gw = [np.copy(gw.ksn2e[0,s,nn]) for s,nn in enumerate(gw.nn) ]
     sn2r_it  = gw.gw_corr_res_iter(sn2eval_gw)

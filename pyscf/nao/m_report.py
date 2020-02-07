@@ -64,6 +64,9 @@ def report_gw (self):
                 out_file.write("\nWarning: Swapping in QP orbital energies has happened!")
                 print('Energy-sorted MO indices: \t {}'.format(swap))                
                 out_file.write('\nEnergy-sorted MO indices: \t {}'.format(swap))
+        if (hasattr(self,'limited_nbnd') and self.limited_nbnd==True):
+            print('Limited number of virtual states are considered in full matrix of W_c')
+            out_file.write('Limited number of virtual states are considered in full matrix of W_c')
         elapsed_time = time.time() - start_time
         print('\nTotal running time is: {}\nJOB DONE! \t {}'.format(time.strftime("%H:%M:%S", time.gmtime(elapsed_time)),time.strftime("%c")))
         out_file.write('\nTotal running time is: {}\nJOB DONE! \t {}'.format(time.strftime("%H:%M:%S", time.gmtime(elapsed_time)),time.strftime("%c"))) 
