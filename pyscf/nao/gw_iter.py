@@ -47,6 +47,7 @@ class gw_iter(gw):
         print('Too few virtual states, limited_nbnd ignored!')
         self.limited_nbnd= False
 
+    self.pass_dupl = kw['pass_dupl'] if 'pass_dupl' in kw else False
     self.h0_vh_x_expval = self.get_h0_vh_x_expval()
     self.ncall_chi0_mv_ite = 0
     self.ncall_chi0_mv_total = 0
@@ -219,7 +220,23 @@ class gw_iter(gw):
 
     return xvx
 
-  def get_snmw2sf_iter(self, optimize="greedy", nbnd=None):
+  def dupl_E (self, spin, thrs=None):
+    """
+    This returns index of states whose eigenenergy has difference less than thrs with former state
+    """
+    thrs=1e-05 if thrs is None else thrs #it's in Hartree, stringent?
+    dup=[]
+    #diff between mf's eigenvalues
+    del_E = np.diff(self.ksn2e[0,spin])
+    #print('number of values with difference less than {}: {}'.format(thrs, sum(i < thrs for i in del_E))
+
+    #index of elements less than thrs   
+    for x, val in enumerate(del_E):
+      if (val < thrs):
+        dup.append(x+1)
+    return dup
+
+  def get_snmw2sf_iter(self, nbnd=None, optimize="greedy"):
     """ 
     This computes a matrix elements of W_c: <\Psi(r)\Psi(r) | W_c(r,r',\omega) |\Psi(r')\Psi(r')>.
     sf[spin,n,m,w] = X^n V_mu X^m W_mu_nu X^n V_nu X^m,
@@ -233,6 +250,7 @@ class gw_iter(gw):
     
     ww = 1j*self.ww_ia
     xvx= self.gw_xvx('blas')
+
     snm2i = []
     #convert k_c as full matrix into Operator
     k_c_opt = LinearOperator((self.nprod,self.nprod),
@@ -244,11 +262,12 @@ class gw_iter(gw):
     #self.kernel
 
     x0 = None
+
     for s in range(self.nspin):
         sf_aux = np.zeros((len(self.nn[s]), self.norbs, self.nprod), dtype=self.dtypeComplex)
         inm = np.zeros((len(self.nn[s]), self.norbs, len(ww)), dtype=self.dtypeComplex)
-
-        nbnd = int(self.vst[s]*0.7) if nbnd is True else self.norbs #considers half of virtual states
+        dup = self.dupl_E(s)
+        if self.pass_dupl is True: print('duplicate states:', dup)
         # w is complex plane
         for iw, w in enumerate(ww):
             self.comega_current = w
@@ -260,33 +279,40 @@ class gw_iter(gw):
             for n in range(len(self.nn[s])):    
                 for m in range(self.norbs):
                     
-                    # v XVX
-                    a = self.kernel_sq.dot(xvx[s][n,m,:])
-                    
-                    # \chi_{0}v XVX by using matrix vector
-                    b = self.chi0_mv(a, self.comega_current)
-                    
-                    # v\chi_{0}v XVX, this should be equals to bxvx in last approach
-                    a = self.kernel_sq.dot(b)
+                    if (self.pass_dupl==True and m in dup ):
+                        #copies sf for m whose mf's energy is almost similar, how about n??
+                        sf_aux[n,m,:]= copy.deepcopy(sf_aux[n,m-1,:])
+                        print('m#{} copied_duplicate, pass_dupl'.format(m))
 
-                    #considers only part v\chi_{0}v XVX for virtual states above nbnd
-                    if (self.limited_nbnd==True and m>=nbnd ):
-                        sf_aux[n,m,:] = a
-                        
                     else:
+                        # v XVX
+                        a = self.kernel_sq.dot(xvx[s][n,m,:])
+                        
+                        # \chi_{0}v XVX by using matrix vector
+                        b = self.chi0_mv(a, self.comega_current)
+                        
+                        # v\chi_{0}v XVX, this should be equals to bxvx in last approach
+                        a = self.kernel_sq.dot(b)
 
-                        # initial guess works pretty well!!
-                        if self.use_initial_guess_ite_solver:
-                            if iw == 0:
-                                x0 = None
-                            else:
-                                x0 = copy.deepcopy(prev_sol[n, m, :])
-                        sf_aux[n,m,:], exitCode = lgmres(k_c_opt, a,
-                                                         atol=self.gw_iter_tol,
-                                                         maxiter=self.maxiter,
-                                                         x0=x0)
-                        if exitCode != 0:
-                          print("LGMRES has not achieved convergence: exitCode = {}".format(exitCode))
+                        #considers only part v\chi_{0}v XVX for virtual states above nbnd
+                        if ( self.limited_nbnd==True and m >= nbnd[s]):
+                            sf_aux[n,m,:] = a
+                            print('m#{} LGMRS ignored, limited_nbnd'.format(m))
+                           
+                        else:
+
+                            # initial guess works pretty well!!
+                            if self.use_initial_guess_ite_solver:
+                                if iw == 0:
+                                    x0 = None
+                                else:
+                                    x0 = copy.deepcopy(prev_sol[n, m, :])
+                            sf_aux[n,m,:], exitCode = lgmres(k_c_opt, a,
+                                                             atol=self.gw_iter_tol,
+                                                             maxiter=self.maxiter,
+                                                             x0=x0)
+                            if exitCode != 0:
+                              print("LGMRES has not achieved convergence: exitCode = {}".format(exitCode))
                 
 
             t2 = timer()
@@ -421,8 +447,10 @@ class gw_iter(gw):
     else:
 
       if self.limited_nbnd is True:
-        self.snmw2sf = self.get_snmw2sf_iter(nbnd=True)
+        nbnd = [int(self.nfermi[s] + self.vst[s]*0.7) for s in range(self.nspin)] #considers 70% of virtual states
+        self.snmw2sf = self.get_snmw2sf_iter(nbnd)
         print('Limited number of virtual states are considered in full matrix of W_c')
+
       else:
         self.snmw2sf = self.get_snmw2sf_iter()
 
