@@ -86,7 +86,7 @@ void sinner_mult(int st, int fn, int *indices, float *data, int nrow_B, int ncol
   int ind;
 
   for (ind = st; ind < fn; ind++) {
-    daxpy(ncol_B, data[ind], &B[indices[ind]*ncol_B], y);
+    saxpy(ncol_B, data[ind], &B[indices[ind]*ncol_B], y);
   
   }
 
@@ -137,7 +137,7 @@ extern "C" void scsr_spmat_denmat(int nrow_A, int ncol_A, int nnz_A, int *indptr
 
     innz_fn = innz_st + ncol_B;
 
-    dinner_mult(st, fn, indices_A, data_A, nrow_B, ncol_B, B, &data_C[innz_st]);
+    sinner_mult(st, fn, indices_A, data_A, nrow_B, ncol_B, B, &data_C[innz_st]);
 
     // fill indices
     for (idx = 0; idx < ncol_B; idx++) {
