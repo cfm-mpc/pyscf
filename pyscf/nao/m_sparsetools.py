@@ -19,6 +19,18 @@ from ctypes import POINTER, c_double, c_int, c_int64, c_float, c_int
 
 libsparsetools = misc.load_library("libsparsetools")
 
+def count_nnz_spmat_denmat(csr, B):
+
+    nrow, ncol = csr.shape
+    if not sparse.isspmatrix_csr(csr):
+        raise Exception("Matrix must be in csr format")
+
+    nnz = libsparsetools.count_nnz_spmat_denmat(
+            c_int(nrow), c_int(B.shape[1]),
+            csr.indptr.ctypes.data_as(POINTER(c_int)))
+
+    return nnz
+
 """
     Wrapper to sparse matrix operations from scipy implemented with openmp
 """
