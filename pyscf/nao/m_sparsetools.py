@@ -31,6 +31,38 @@ def count_nnz_spmat_denmat(csr, B):
 
     return nnz
 
+def spmat_denmat(csr, B):
+
+    if not sparse.isspmatrix_csr(csr):
+        raise Exception("Matrix must be in csr format")
+
+    nrow, ncol = csr.shape
+    nnz = count_nnz_spmat_denmat(csr, B)
+    
+    indptr_new = np.zeros((csr.shape[0]+1), dtype=np.int32)
+    indices_new = np.zeros((nnz), dtype=np.int32)
+    data_new = np.zeros((nnz), dtype=csr.data.dtype)
+
+    if csr.dtype == np.float32:
+        raise ValueError("not yet implemented")
+
+    elif csr.dtype == np.float64:
+        libsparsetools.dcsr_spmat_denmat(
+                c_int(nrow), c_int(ncol), c_int(csr.nnz), 
+                csr.indptr.ctypes.data_as(POINTER(c_int)),
+                csr.indices.ctypes.data_as(POINTER(c_int)), 
+                csr.data.ctypes.data_as(POINTER(c_double)),
+                c_int(B.shape[0]), c_int(B.shape[1]),
+                B.ctypes.data_as(POINTER(c_double)),
+                indptr_new.ctypes.data_as(POINTER(c_int)),
+                indices_new.ctypes.data_as(POINTER(c_int)), 
+                data_new.ctypes.data_as(POINTER(c_double)))
+
+    else:
+        raise ValueError("Not implemented")
+
+    return sparse.csr_matrix((data_new, indices_new, indptr_new), shape=(nrow, B.shape[1]))
+
 """
     Wrapper to sparse matrix operations from scipy implemented with openmp
 """
