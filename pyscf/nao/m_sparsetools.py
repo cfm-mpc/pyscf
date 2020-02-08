@@ -44,7 +44,16 @@ def spmat_denmat(csr, B):
     data_new = np.zeros((nnz), dtype=csr.data.dtype)
 
     if csr.dtype == np.float32:
-        raise ValueError("not yet implemented")
+        libsparsetools.scsr_spmat_denmat(
+                c_int(nrow), c_int(ncol), c_int(csr.nnz), 
+                csr.indptr.ctypes.data_as(POINTER(c_int)),
+                csr.indices.ctypes.data_as(POINTER(c_int)), 
+                csr.data.ctypes.data_as(POINTER(c_float)),
+                c_int(B.shape[0]), c_int(B.shape[1]),
+                B.ctypes.data_as(POINTER(c_float)),
+                indptr_new.ctypes.data_as(POINTER(c_int)),
+                indices_new.ctypes.data_as(POINTER(c_int)), 
+                data_new.ctypes.data_as(POINTER(c_float)))
 
     elif csr.dtype == np.float64:
         libsparsetools.dcsr_spmat_denmat(
