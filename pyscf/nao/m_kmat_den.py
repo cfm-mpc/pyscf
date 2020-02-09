@@ -172,23 +172,16 @@ def kmat_den(mf, dm=None, algo=None, **kw):
         vertex V^ab_mu. The algorithm was not realized before and it seems
         to be superior to the algorithm sm0_prd (see above).
         """
-        #t1 = timer()
-
 
         if len(dm.shape) == 3:
             # if spin index is present
+        
+            kmat  = np.zeros_like(dm)
+            print(kmat.shape)
 
-            for s in range(mf.nspin):
+            for spin in range(mf.nspin):
                 #kmat[s][ab2vdhv.nonzero()] += ab2vdhv.data
-                kmat[s] = sm0_sum(pb, mf, hk, dm[s])
-#                for mu, a_ap2v in enumerate(dab2v):
-#                    cc = da2cc[mu].toarray().reshape(nnp)
-#                    q2v = np.dot( cc, hk )
-#                    nu2v = da2cc * q2v
-#                    a_bp2vd = sparse.csr_matrix(a_ap2v * dm[s])
-#                    bp_b2hv = sparse.csr_matrix((nu2v * mf.v_dab_csr).reshape((n,n)))
-#                    ab2vdhv = a_bp2vd * bp_b2hv
-#                    kmat[s][ab2vdhv.nonzero()] += ab2vdhv.data
+                kmat[spin, :, :] = sm0_sum(pb, mf, hk, dm[spin])
             
         elif len(dm.shape) == 2:
             # if spin index is absent
@@ -197,8 +190,6 @@ def kmat_den(mf, dm=None, algo=None, **kw):
             # 583.69870308 22.44895533]
 
             kmat = sm0_sum(pb, mf, hk, dm)
-          
-             
         else:
             print(dm.shape)
             raise RuntimeError('?dm.shape?')
@@ -211,7 +202,11 @@ def kmat_den(mf, dm=None, algo=None, **kw):
     return kmat
 
 def sm0_sum(pb, mf, hk, dm):
-
+    """ 
+    This algorithm is using two sparse representations of the product 
+    vertex V^ab_mu. The algorithm was not realized before and it seems
+    to be superior to the algorithm sm0_prd (see above).
+    """
     if hasattr(mf, 'dab2v'):
         dab2v = mf.dab2v
     else:
