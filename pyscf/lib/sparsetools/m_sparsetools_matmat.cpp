@@ -133,6 +133,7 @@ extern "C" void scsr_spmat_denmat(int nrow_A, int ncol_A, int nnz_A, int *indptr
 
     if (st == fn) {
       indptr_C[i+1] = indptr_C[i];
+      continue;
     }
 
     innz_fn = innz_st + ncol_B;
@@ -171,6 +172,7 @@ extern "C" void dcsr_spmat_denmat(int nrow_A, int ncol_A, int nnz_A, int *indptr
 
     if (st == fn) {
       indptr_C[i+1] = indptr_C[i];
+      continue;
     }
 
     innz_fn = innz_st + ncol_B;
