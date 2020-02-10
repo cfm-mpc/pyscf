@@ -35,13 +35,15 @@ def write_rst_h5py(data, value, filename = None):
     hf = h5py.File(filename, 'a')
     try:
         hf.create_dataset(value, data=data)
+        msg = 'WRITE: matrix elements of {} stored in {}'.format(value, filename)
+
     except:
-        print("failed writting data to {}".format(filename))
+        msg = "failed writting data to {}".format(filename)
         print(type(data))
 
     hf.close
-    msg = 'WRITE: matrix elements of {} stored in {}'.format(value, filename)
     return msg
+
 
 
 def write_rst_yaml (data , filename=None):

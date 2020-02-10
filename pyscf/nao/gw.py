@@ -257,11 +257,7 @@ class gw(scf):
         nmw2sf[:,:,iw] = einsum('nmp,pq,nmq->nm', nmp2xvx, si0, nmp2xvx, optimize=optimize)
       
       snmw2sf.append(nmw2sf)
-
-      if self.write_R:
-        from pyscf.nao.m_restart import write_rst_h5py
-        print(write_rst_h5py (data=snm2i, value='screened_interactions'))
-    
+   
     return snmw2sf
 
   def gw_corr_int(self, sn2w, eps=None):
@@ -378,17 +374,16 @@ class gw(scf):
     for nocc_0t,nocc_conv,nvrt_conv in zip(self.nocc_0t, self.nocc_conv, self.nvrt_conv):
       self.nn_conv.append( range(max(nocc_0t-nocc_conv,0), min(nocc_0t+nvrt_conv,self.norbs)))
 
-    # iterations to converge the 
+    # iterations to converge the qp-energies 
     if self.verbosity>0:
-      mess = """
-        '='*48' G0W0 corrections of eigenvalues  '='*48
-        MAXIMUM number of iterations (Input file): {}
-        and number of grid points: {}
-        Number of GW correction at energies calculated by integral part: {}
-        and by sigma part: {}
-        GW corection for eigenvalues STARTED:
-        """.format(self.niter_max_ev, self.nff_ia, np.size(self.gw_corr_int(sn2eval_gw)),
-                   np.size(self.gw_corr_int(sn2eval_gw)))
+      print('='*48,'| G0W0 corrections of eigenvalues |','='*48)
+      mess = """        
+      MAXIMUM number of iterations (Input file): {},
+      Number of grid points (frequency): {},
+      Number of states to be corrected: {},
+      Tolerance to convergence: {}\n
+      GW corection for eigenvalues STARTED:
+      """.format(self.niter_max_ev, self.nff_ia, len(self.nn[0]), self.tol_ev)
       print(mess)
     for i in range(self.niter_max_ev):
       sn2i = self.gw_corr_int(sn2eval_gw)
@@ -412,10 +407,10 @@ class gw(scf):
         for s,n2ev in enumerate(sn2eval_gw):
           print('Spin{}: {}'.format(s+1, n2ev[:]*HARTREE2EV)) #, sn2i[s][:]*HARTREE2EV, sn2r[s][:]*HARTREE2EV))   
       if err<self.tol_ev : 
-        if self.verbosity>0: print('-'*43,' |  Convergence has been reached at iteration#{}  | '.format(i+1),'-'*43,'\n')
+        if self.verbosity>0: print('-'*40,' |  Convergence has been reached at iteration#{}  | '.format(i+1),'-'*40,'\n')
         break
       if err>=self.tol_ev and i+1==self.niter_max_ev:
-        print('-'*32,' |  TAKE CARE! Convergence to tolerance not achieved after {}-iterations  | '.format(self.niter_max_ev),'-'*32,'\n')
+        print('-'*28,' |  TAKE CARE! Convergence to tolerance not achieved after {}-iterations  | '.format(self.niter_max_ev),'-'*28,'\n')
     return sn2eval_gw  
     
   def make_mo_g0w0(self):
@@ -446,7 +441,11 @@ class gw(scf):
       #print(self.mo_energy_g0w0)
       argsrt = np.argsort(self.mo_energy_gw[0,s,:])
       self.argsort.append(argsrt)
-      if self.verbosity>2: print(__name__, '\t\t====> Spin {}: energy-sorted MO indices: {}'.format(str(s+1),argsrt))
+
+      if self.verbosity>2: 
+        order = self.argsort[s][self.start_st[s]:self.finish_st[s]]        
+        print(__name__, '\t\t====> Spin {}: energy-sorted MO indices: {}'.format(str(s+1),order))
+
       self.mo_energy_gw[0,s,:] = np.sort(self.mo_energy_gw[0,s,:])
       for n,m in enumerate(argsrt): self.mo_coeff_gw[0,s,n] = self.mo_coeff[0,s,m]
  
@@ -454,6 +453,8 @@ class gw(scf):
     if self.verbosity>4:
       print(__name__,'\t\t====> Performed xc_code: {}\n '.format(self.xc_code))
       print('\nConverged GW-corrected eigenvalues:\n',self.mo_energy_gw*HARTREE2EV)
+
+    if (self.write_R==True):    self.write_data()
     
     return self.etot_gw()
         
@@ -501,3 +502,12 @@ class gw(scf):
     """ Prints the energy levels of meanfield and G0W0"""
     from pyscf.nao.m_report import report_gw
     return report_gw(self)
+
+  def write_data(self):
+    "writes data in RESTART'hdf5' format"
+    from pyscf.nao.m_restart import write_rst_h5py
+    write_rst_h5py (value='screened_interactions', data=self.snmw2sf)
+    write_rst_h5py (value='MF_energies_Ha', data=self.mo_energy)
+    write_rst_h5py (value='QP_energies_Ha', data=self.mo_energy_gw)
+    write_rst_h5py (value='correct_order' , data=self.argsort)
+    write_rst_h5py (value='G0W0_eigenfuns', data=self.mo_coeff_gw)

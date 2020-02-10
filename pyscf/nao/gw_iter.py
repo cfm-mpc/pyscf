@@ -224,7 +224,7 @@ class gw_iter(gw):
     """
     This returns index of states whose eigenenergy has difference less than thrs with former state
     """
-    thrs=1e-05 if thrs is None else thrs #it's in Hartree, stringent?
+    thrs=1e-05 if thrs is None else thrs #it's in Hartree, self.tol_ev is too stringent!!
     dup=[]
     #diff between mf's eigenvalues
     del_E = np.diff(self.ksn2e[0,spin])
@@ -282,7 +282,7 @@ class gw_iter(gw):
                     if (self.pass_dupl==True and m in dup ):
                         #copies sf for m whose mf's energy is almost similar, how about n??
                         sf_aux[n,m,:]= copy.deepcopy(sf_aux[n,m-1,:])
-                        print('m#{} copied_duplicate, pass_dupl'.format(m))
+                        if self.verbosity>3: print('m#{} copied_duplicate, pass_dupl'.format(m))
 
                     else:
                         # v XVX
@@ -297,7 +297,7 @@ class gw_iter(gw):
                         #considers only part v\chi_{0}v XVX for virtual states above nbnd
                         if ( self.limited_nbnd==True and m >= nbnd[s]):
                             sf_aux[n,m,:] = a
-                            print('m#{} LGMRS ignored, limited_nbnd'.format(m))
+                            if self.verbosity>3: print('m#{} LGMRS ignored, limited_nbnd'.format(m))
                            
                         else:
 
@@ -330,12 +330,9 @@ class gw_iter(gw):
             inm[:,:,iw] = np.einsum('nmp,nmp->nm', xvx[s], sf_aux, optimize=optimize)
         snm2i.append(np.real(inm))
 
-    if (self.write_R==True):
-        from pyscf.nao.m_restart import write_rst_h5py
-        print(write_rst_h5py (data=snm2i, value='screened_interactions'))
-
     print("Total call chi0_mv: ", self.ncall_chi0_mv_total)
     return snm2i
+
 
   def gw_vext2veffmatvec(self, vin):
     dn0 = self.chi0_mv(vin, self.comega_current)
@@ -435,23 +432,19 @@ class gw_iter(gw):
     This computes an integral part of the GW correction at GW class while
     uses get_snmw2sf_iter
     """
+    if not hasattr(self, 'snmw2sf'):
 
-    if self.restart is True: 
-      from pyscf.nao.m_restart import read_rst_h5py
-      self.snmw2sf, msg = read_rst_h5py(value='screened_interactions',filename= 'RESTART.hdf5')
-      print(msg)  
+        if self.restart is True: 
+            from pyscf.nao.m_restart import read_rst_h5py
+            self.snmw2sf, msg = read_rst_h5py(value='screened_interactions',filename= 'RESTART.hdf5')
+            print(msg)  
 
-      if self.snmw2sf is None:
-          self.snmw2sf = self.get_snmw2sf_iter()
+        elif self.limited_nbnd is True:
+            nbnd = [int(self.nfermi[s] + self.vst[s]*0.7) for s in range(self.nspin)] #considers 70% of virtual states
+            self.snmw2sf = self.get_snmw2sf_iter(nbnd)
+            print('Limited number of virtual states are considered in full matrix of W_c')
 
     else:
-
-      if self.limited_nbnd is True:
-        nbnd = [int(self.nfermi[s] + self.vst[s]*0.7) for s in range(self.nspin)] #considers 70% of virtual states
-        self.snmw2sf = self.get_snmw2sf_iter(nbnd)
-        print('Limited number of virtual states are considered in full matrix of W_c')
-
-      else:
         self.snmw2sf = self.get_snmw2sf_iter()
 
     return self.gw_corr_int(sn2w, eps=None)
@@ -472,7 +465,7 @@ class gw_iter(gw):
         lsos = self.lsofs_inside_contour(self.ksn2e[0,s,:],w,self.dw_excl)
         zww = array([pole[0] for pole in lsos])
         stw = array([pole[1] for pole in lsos])
-        print('states located inside contour: #',stw)
+        if self.verbosity>3: print('states located inside contour: #',stw)
         xv = np.dot(v_pab,x[n])
         for pole, z_real in zip(lsos, zww):
           self.comega_current = z_real
@@ -501,10 +494,16 @@ class gw_iter(gw):
       self.nn_conv.append( range(max(nocc_0t-nocc_conv,0), min(nocc_0t+nvrt_conv,self.norbs)))
 
     # iterations to converge the qp-energies 
-    if self.verbosity>0: 
-        print('='*48,'|  G0W0 corrections of eigenvalues  |','='*48+'\n')
-        print('MAXIMUM number of iterations (Input file): {} and number of grid points: {}'.format(self.niter_max_ev,self.nff_ia))
-        print('GW corection for eigenvalues STARTED:\n')    
+    if self.verbosity>0:
+      print('='*48,'| G0W0_iter corrections of eigenvalues |','='*48)
+      mess = """        
+      MAXIMUM number of iterations (Input file): {},
+      Number of grid points (frequency): {},
+      Number of states to be corrected: {},
+      Tolerance to convergence: {}\n
+      GW corection for eigenvalues STARTED:
+      """.format(self.niter_max_ev, self.nff_ia, len(self.nn[0]), self.tol_ev)
+      print(mess)    
 
     for i in range(self.niter_max_ev):
       sn2i = self.gw_corr_int_iter(sn2eval_gw)
@@ -531,16 +530,16 @@ class gw_iter(gw):
       
       if err<self.tol_ev : 
         if self.verbosity>0:
-          print('-'*43,
+          print('-'*42,
                 ' |  Convergence has been reached at iteration#{}  | '.format(i+1),
-                '-'*43,'\n')
+                '-'*42,'\n')
         break
 
       if err>=self.tol_ev and i+1==self.niter_max_ev:
         if self.verbosity>0:
-          print('='*30,
+          print('='*28,
                 ' |  TAKE CARE! Convergence to tolerance {} not achieved after {}-iterations  | '.format(self.tol_ev,self.niter_max_ev),
-                '='*30,'\n')
+                '='*28,'\n')
     
     return sn2eval_gw
 
@@ -579,10 +578,7 @@ class gw_iter(gw):
       self.mo_energy_gw[0,s,:] = np.sort(self.mo_energy_gw[0,s,:])
       for n,m in enumerate(argsrt): self.mo_coeff_gw[0,s,n] = self.mo_coeff[0,s,m]
  
-    if (self.write_R==True):
-        from pyscf.nao.m_restart import write_rst_h5py
-        write_rst_h5py (value='QP_energies', data=self.mo_energy_gw)
-        write_rst_h5py (value='G0W0_eigenfuns', data=self.mo_coeff_gw)
+    if (self.write_R==True):    self.write_data()
 
     self.xc_code = 'GW'
     if self.verbosity>3:
