@@ -247,7 +247,9 @@ def sm0_sum(pb, mf, hk, dm):
         bp_b2hv = csr_matvec(mf.v_dab_trans, nu2v).reshape((n, n))
         tt[5] = timer();
 
-        ab2vdhv = spmat_denmat(a_bp2vd, bp_b2hv)
+        # This retuned a seg fault  for large system ??
+        # ab2vdhv = spmat_denmat(a_bp2vd, bp_b2hv)
+        ab2vdhv = a_bp2vd.dot(bp_b2hv)
         tt[6] = timer()
 
         kmat += ab2vdhv
@@ -256,5 +258,5 @@ def sm0_sum(pb, mf, hk, dm):
         ttt += tt[1:8]-tt[0:7]
         
     print(__name__, ttt)
-
-    return np.require(np.asarray(kmat), dtype=kmat.dtype,  requirements=['A', 'O', 'W', 'C'])
+    return kmat
+    #return np.require(np.asarray(kmat), dtype=kmat.dtype,  requirements=['A', 'O', 'W', 'C'])
