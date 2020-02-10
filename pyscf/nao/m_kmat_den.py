@@ -185,9 +185,6 @@ def kmat_den(mf, dm=None, algo=None, **kw):
             
         elif len(dm.shape) == 2:
             # if spin index is absent
-            # [   14.59955484   314.09553769  1113.57001527   140.44369524   687.34180544   89.05969492    28.3846701 ]
-            # C60: [ 15.85272067 288.39123102 153.34696097 578.67634735 128.22075884
-            # 583.69870308 22.44895533]
 
             kmat = sm0_sum(pb, mf, hk, dm)
         else:
@@ -207,6 +204,12 @@ def sm0_sum(pb, mf, hk, dm):
     vertex V^ab_mu. The algorithm was not realized before and it seems
     to be superior to the algorithm sm0_prd (see above).
     """
+
+    # C60
+    # [ 15.85272067 288.39123102 153.34696097 578.67634735 128.22075884 583.69870308 22.44895533]
+    # 2 alpha-NPD
+    # [  19.57798671 1186.84709886  279.20988026  136.44827988 2879.76712975 291.75671738 1538.04936546   99.47608311]
+    # [  21.2088159  1186.7482362   279.53348225  59.28001652  388.78893778 3198.20760651 76.97475073 ]
     if hasattr(mf, 'dab2v'):
         dab2v = mf.dab2v
     else:
@@ -229,10 +232,6 @@ def sm0_sum(pb, mf, hk, dm):
         tt[1] = timer(); 
 
         # this could be done directly
-        # Slower term for large systems
-        # blas dgemv is much slower than np.dot
-        # That is odd!!
-        # q2v = blas.dgemv( 1.0, hk, cc, trans=1 )
         q2v = cc.dot(hk)
         tt[2] = timer();
 
@@ -243,25 +242,19 @@ def sm0_sum(pb, mf, hk, dm):
 
         # a_ap2v: sparse
         a_bp2vd = spmat_denmat(a_ap2v, dm)
-        #a_bp2vd = sparse.coo_matrix(a_ap2v.dot(dm),
-        #                            dtype=a_ap2v.dtype).tocsr()
         tt[4] = timer();
-        # bp_b2hv = sparse.csr_matrix((nu2v * dab2v_csr).reshape((n,n)))
         
-        # slower term ..
-        #bp_b2hv = dab2v_csr.T.dot(nu2v).reshape((n,n))
-        # bp_b2hv = csc_matvec(dab2v_csr.T, nu2v).reshape((n,n))
         bp_b2hv = csr_matvec(mf.v_dab_trans, nu2v).reshape((n, n))
         tt[5] = timer();
-        
-        ab2vdhv = a_bp2vd.dot(bp_b2hv)
+
+        ab2vdhv = spmat_denmat(a_bp2vd, bp_b2hv)
         tt[6] = timer()
-        # kmat[ab2vdhv.nonzero()] += ab2vdhv.data
 
         kmat += ab2vdhv
+
         tt[7] = timer()
         ttt += tt[1:8]-tt[0:7]
         
     print(__name__, ttt)
 
-    return kmat     
+    return np.require(np.asarray(kmat), dtype=kmat.dtype,  requirements=['A', 'O', 'W', 'C'])
