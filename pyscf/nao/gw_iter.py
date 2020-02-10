@@ -439,13 +439,14 @@ class gw_iter(gw):
             self.snmw2sf, msg = read_rst_h5py(value='screened_interactions',filename= 'RESTART.hdf5')
             print(msg)  
 
-        elif self.limited_nbnd is True:
-            nbnd = [int(self.nfermi[s] + self.vst[s]*0.7) for s in range(self.nspin)] #considers 70% of virtual states
-            self.snmw2sf = self.get_snmw2sf_iter(nbnd)
-            print('Limited number of virtual states are considered in full matrix of W_c')
+        else:
+            if self.limited_nbnd is True:
+                nbnd = [int(self.nfermi[s] + self.vst[s]*0.7) for s in range(self.nspin)] #considers 70% of virtual states
+                self.snmw2sf = self.get_snmw2sf_iter(nbnd)
+                print('Limited number of virtual states are considered in full matrix of W_c')
 
-    else:
-        self.snmw2sf = self.get_snmw2sf_iter()
+            else:
+                self.snmw2sf = self.get_snmw2sf_iter()
 
     return self.gw_corr_int(sn2w, eps=None)
 
@@ -600,11 +601,11 @@ if __name__=='__main__':
     mf = scf.UHF(mol)
     mf.kernel()
 
-    gw = gw_iter(mf=mf, gto=mol, verbosity=1, niter_max_ev=1, nff_ia=5, nvrt=3, nocc=3, gw_iter_tol=1e-04, limited_nbnd=True)
+    gw = gw_iter(mf=mf, gto=mol, verbosity=1, niter_max_ev=1, nff_ia=5, nvrt=1, nocc=1, use_initial_guess_ite_solver=False, limited_nbnd=False, pass_dupl=False,)
 
     gw_ref = gw.get_snmw2sf()
     gw_it = gw.get_snmw2sf_iter()
-    #gw_lim = gw.get_snmw2sf_iter(nbnd=True)
+
     print('Comparison between matrix element of W obtained from gw_iter and gw classes: ', np.allclose(gw_it, gw_ref, atol= gw.gw_iter_tol)) 
     print([abs(gw_it[s]-gw_ref[s]).sum() for s in range(gw.nspin)])  
 
