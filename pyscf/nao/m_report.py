@@ -60,8 +60,8 @@ def report_gw (self):
         for s in range(self.nspin): 
             swap = self.argsort[s][self.start_st[s]:self.finish_st[s]]
             if (np.allclose(swap,np.sort(swap))==False):
-                print ("Warning: Swapping in QP orbital energies has happened!")
-                out_file.write("\nWarning: Swapping in QP orbital energies has happened!")
+                print ("Warning: Spin {}, swapping in QP orbital energies has happened!".format(s+1))
+                out_file.write("\nWarning: Spin {}, swapping in QP orbital energies has happened!".format(s+1))
                 print('Energy-sorted MO indices: \t {}'.format(swap))                
                 out_file.write('\nEnergy-sorted MO indices: \t {}'.format(swap))
         elapsed_time = time.time() - start_time

@@ -23,8 +23,8 @@ echo "${green}============================================="
 echo "$i ====> Repository will be UPDATED!"
 echo "=============================================${NC}"
 echo "${white}"
-git pull
-git pull https://github.com/cfm-mpc/pyscf nao
+#git pull
+#git pull https://github.com/cfm-mpc/pyscf nao
 
 
 LIST="$(ls test_*.py)"

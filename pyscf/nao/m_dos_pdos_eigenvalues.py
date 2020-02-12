@@ -102,13 +102,12 @@ def plot (mf, d_qp = None, show = None):
 
 
 def dosplot (filename = None, data = None, fermi = None):
-    if (filename is not None): data = np.loadtxt(filename)
-    elif (data is not None): data = data
-
     import matplotlib.pyplot as plt
     from matplotlib import rc
     plt.rc('text', usetex=True)
     plt.rc('font', family='serif')
+    if (filename is not None): data = np.loadtxt(filename)
+    elif (data is not None): data = data
     plt.plot(data.T[0], data.T[1], label='MF Spin-UP', linestyle=':',color='r')
     plt.fill_between(data.T[0], 0, data.T[1], facecolor='r',alpha=0.1, interpolate=True)
     plt.plot(data.T[0], data.T[2], label='QP Spin-UP',color='r')
@@ -122,6 +121,7 @@ def dosplot (filename = None, data = None, fermi = None):
     plt.title('Total DOS', fontsize=20)
     plt.xlabel('Energy (eV)', fontsize=15) 
     plt.ylabel('Density of States (electron/eV)', fontsize=15)
+    plt.xlim((-15, 5))
     plt.legend()
     plt.savefig("dos_eigen.svg", dpi=900)
     plt.show()
@@ -132,8 +132,6 @@ def pdosplot (filename = None, data = None, size = None,  fermi = None):
     elif (data is not None): data = data
     if (size is None): print('Please give number of resolved angular momentum!')
     if (fermi is None): print ('Please give fermi energy')
-
-
     import matplotlib.pyplot as plt
     from matplotlib import rc
     plt.rc('text', usetex=True)
@@ -158,6 +156,7 @@ def pdosplot (filename = None, data = None, size = None,  fermi = None):
     plt.title('PDOS', fontsize=20)
     plt.xlabel('Energy (eV)', fontsize=15) 
     plt.ylabel('Projected Density of States (electron/eV)', fontsize=15)
+    plt.xlim((-15, 5))    
     plt.legend()
     plt.savefig("pdos.svg", dpi=900)
     plt.show()

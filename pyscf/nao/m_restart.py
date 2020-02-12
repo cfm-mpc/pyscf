@@ -6,14 +6,12 @@
 from __future__ import division
 import numpy as np
 
-def read_rst_h5py (filename="SCREENED_COULOMB.hdf5"):
-
+def read_rst_h5py (value, filename=None):
     import h5py ,os
     if filename is None: 
         path = os.getcwd()
         filename =find('*.hdf5', path)
-    #filename= 'SCREENED_COULOMB.hdf5'
-    
+  
     try:
         fl = h5py.File(filename, 'r')
     except:
@@ -21,31 +19,31 @@ def read_rst_h5py (filename="SCREENED_COULOMB.hdf5"):
         return None, msg
 
     #print("Keys: %s" % f.keys())
-    a_group_key = list(fl.keys())[0]
-    # Get the data
-    data = list(fl[a_group_key])
-    
-    msg = 'RESTART: Full matrix elements of screened interactions (W_c) was read from {}'.format(filename)
-    return data, msg
+    a_group_key = list(fl.keys())
+    if value in a_group_key: 
+        # Get the data
+        data = list(fl[value])
+        msg = 'RESTART: matrix elements of {} was read from {}'.format(value, filename)
+        return data, msg
 
 
-def write_rst_h5py(data, filename = None):
+def write_rst_h5py(data, value, filename = None):
     import h5py
     if filename is None: 
-      filename= 'SCREENED_COULOMB.hdf5'
-    
+      filename= 'RESTART.hdf5'   
 
-    with h5py.File(filename, 'w') as data_file:
-        try:
-            data_file.create_dataset('W_c', data=data)
-        except:
-            print("failed writting data to SCREENED_COULOMB.hdf5")
-            print(type(data))
+    hf = h5py.File(filename, 'a')
+    try:
+        hf.create_dataset(value, data=data)
+        msg = 'WRITE: matrix elements of {} stored in {}'.format(value, filename)
 
-        data_file.close
-    
-    msg = 'Full matrix elements of screened interactions (W_c) stored in {}'.format(filename)
+    except:
+        msg = "failed writting data to {}".format(filename)
+        print(type(data))
+
+    hf.close
     return msg
+
 
 
 def write_rst_yaml (data , filename=None):
@@ -69,3 +67,43 @@ def read_rst_yaml (filename=None):
             return data, msg
         except yaml.YAMLError as exc:
             return exc
+
+def find (pattern, path):
+    import os, fnmatch
+    result = []
+    for root, dirs, files in os.walk(path):
+        for name in files:
+            if fnmatch.fnmatch(name, pattern):
+                result.append(os.path.join(name))
+    if (len(result) == 0 ):
+        msg = 'There is no file for restarting!'
+        return msg
+    elif (len(result) > 1 ):
+        msg = 'Which {} file should be read! There are several: {}'.format(pattern,result)
+        return msg
+    else:
+        return result[0]
+
+
+if __name__=='__main__':
+    from pyscf import gto, scf
+    from pyscf.nao import gw as gw_c
+    import numpy as np
+    mol = gto.M( verbose = 0, atom = 'O 0.0, 0.0, 0.622978 ; O 0.0, 0.0, -0.622978',basis = 'cc-pvdz', spin=2, charge=0)
+    gto_mf = scf.UHF(mol)
+    gto_mf.kernel()
+    gw = gw_c(mf=gto_mf, gto=mol)
+    k = gw.get_k()
+    w = gw.get_snmw2sf()
+    #print(write_rst_yaml (w))
+    #data, msg = read_rst_yaml(filename='SCREENED_COULOMB.yaml') 
+    #print(msg)
+    #print(np.allclose(w[0], data[0]))
+    print(write_rst_h5py (value='screened_interactions',data=w))
+    data1, msg1 = read_rst_h5py(value='screened_interactions',filename= 'RESTART.hdf5')
+    print(write_rst_h5py (value='fock', data=k))
+    data2, msg2 = read_rst_h5py(value='fock',filename= 'RESTART.hdf5') 
+    print(msg1)
+    print(np.allclose(w[0], data1[0]))
+    print(msg2)
+    print(np.allclose(k[0], data2[0]))
