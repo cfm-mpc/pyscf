@@ -20,6 +20,7 @@ class scf(tddft_iter):
     self.perform_scf = kw['perform_scf'] if 'perform_scf' in kw else False
     self.kmat_algo = kw['kmat_algo'] if 'kmat_algo' in kw else None
     self.kmat_timing = 0.0 if 'kmat_timing' in kw else None
+
     for x in ['xc_code', 'dealloc_hsx']: kw.pop(x,None)
     tddft_iter.__init__(self, xc_code='RPA', dealloc_hsx=False, **kw)
     print(__name__, ' dtype ', self.dtype)
@@ -33,6 +34,10 @@ class scf(tddft_iter):
 
     if self.nspin==1:
       self.pyscf_scf = hf.SCF(self)
+      if "SCF_kernel_conv_tol" in kw.keys():
+        self.pyscf_scf.conv_tol = kw["SCF_kernel_conv_tol"]
+      else:
+        self.pyscf_scf.conv_tol = 1.0e-9 # default Value in pyscf.__config__
     else:
       self.pyscf_scf = uhf.UHF(self)
       
@@ -45,10 +50,15 @@ class scf(tddft_iter):
     if self.perform_scf : self.kernel_scf(**kw)
 
   def kernel_scf(self, dump_chk=False, **kw):
-    """ This does the actual SCF loop so far only HF """
+    """
+    This does the actual SCF loop so far only HF
+    """
     from pyscf.nao.m_fermi_energy import fermi_energy as comput_fermi_energy
+    
     dm0 = self.get_init_guess()
-    if (self.nspin==2 and dm0.ndim==5): dm0=dm0[0,...,0] 
+    if (self.nspin==2 and dm0.ndim==5):
+        dm0=dm0[0,...,0] 
+    
     etot = self.pyscf_scf.kernel(dm0=dm0, dump_chk=dump_chk, **kw)
     #print(__name__, self.mo_energy.shape, self.pyscf_hf.mo_energy.shape)
 

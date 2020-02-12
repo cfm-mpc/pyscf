@@ -19,14 +19,14 @@ from ctypes import POINTER, c_double, c_int, c_int64, c_float, c_int
 
 libsparsetools = misc.load_library("libsparsetools")
 
-def count_nnz_spmat_denmat(csr, B):
+def count_nnz_spmat_denmat(csr, ncolB):
 
     nrow, ncol = csr.shape
     if not sparse.isspmatrix_csr(csr):
         raise Exception("Matrix must be in csr format")
 
     nnz = libsparsetools.count_nnz_spmat_denmat(
-            c_int(nrow), c_int(B.shape[1]),
+            c_int(nrow), c_int(ncolB),
             csr.indptr.ctypes.data_as(POINTER(c_int)))
 
     return nnz
@@ -37,7 +37,7 @@ def spmat_denmat(csr, B):
         raise Exception("Matrix must be in csr format")
 
     nrow, ncol = csr.shape
-    nnz = count_nnz_spmat_denmat(csr, B)
+    nnz = count_nnz_spmat_denmat(csr, B.shape[1])
     
     indptr_new = np.zeros((csr.shape[0]+1), dtype=np.int32)
     indices_new = np.zeros((nnz), dtype=np.int32)
@@ -70,7 +70,8 @@ def spmat_denmat(csr, B):
     else:
         raise ValueError("Not implemented")
 
-    return sparse.csr_matrix((data_new, indices_new, indptr_new), shape=(nrow, B.shape[1]))
+    ret = sparse.csr_matrix((data_new, indices_new, indptr_new), shape=(nrow, B.shape[1]))
+    return ret
 
 """
     Wrapper to sparse matrix operations from scipy implemented with openmp
