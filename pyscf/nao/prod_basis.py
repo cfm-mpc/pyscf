@@ -680,6 +680,64 @@ class prod_basis:
                     einsum('pab->pba', lab[ls:lf, :, :])
         return pab2v
 
+    def get_ac_vertex_array_sparse(self, dtype=np.float64):
+        """
+        Returns the product vertex coefficients as 3d array (dense table)
+        """
+
+        import sparse
+        from pyscf.nao.ndcoo import combine_matrices
+
+        atom2so = self.sv.atom2s
+        nfap = self.c2s[-1]
+        n = self.sv.atom2s[-1]
+        pab2v = np.require(zeros((nfap, n, n), dtype=dtype),
+                           requirements='CW')
+        pab2v_coo_list = []
+        ielem = 0
+        for (atom, [sd, fd, pt, spp]) in enumerate(zip(self.dpc2s,
+                self.dpc2s[1:], self.dpc2t, self.dpc2sp)):
+            if pt != 1:
+                continue
+            (s, f) = atom2so[atom:atom + 2]
+            print(self.prod_log.sp2vertex[spp].shape)
+            pab2v[sd:fd, s:f, s:f] = self.prod_log.sp2vertex[spp]
+            pab2v_coo_list.append({})
+            pab2v_coo_list[ielem]["mat"] = sparse.COO(self.prod_log.sp2vertex[spp])
+            pab2v_coo_list[ielem]["st_idx"] = np.array([sd, s, s], dtype=np.int32)
+            pab2v_coo_list[ielem]["fn_idx"] = np.array([fd, f, f], dtype=np.int32)
+            print("nnz: ", pab2v_coo_list[ielem]["mat"].nnz, self.prod_log.sp2vertex[spp].size)
+            ielem += 1
+
+        pab2v_sparse = combine_matrices(pab2v_coo_list)
+        print("diff: ", np.sum(abs(pab2v_sparse.todense() - pab2v)))
+        import sys
+        sys.exit()
+
+        for (sd, fd, pt, spp) in zip(self.dpc2s, self.dpc2s[1:],
+                self.dpc2t, self.dpc2sp):
+            if pt != 2:
+                continue
+            inf = self.bp2info[spp]
+            lab = einsum('dl,dab->lab', inf.cc, inf.vrtx)
+            (a, b) = inf.atoms
+            (sa, fa, sb, fb) = (atom2so[a], atom2so[a + 1], atom2so[b],
+                                atom2so[b + 1])
+            for (c, ls, lf) in zip(inf.cc2a, inf.cc2s, inf.cc2s[1:]):
+                pab2v[self.c2s[c]:self.c2s[c + 1], sa:fa, sb:fb] = \
+                    lab[ls:lf, :, :]
+                pab2v[self.c2s[c]:self.c2s[c + 1], sb:fb, sa:fa] = \
+                    einsum('pab->pba', lab[ls:lf, :, :])
+
+        pab2v_sparse = sparse.COO(pab2v)
+        print(pab2v_sparse.nnz, pab2v_sparse.shape)
+        pab2v_size = nfap*n*n
+        print("size: ", pab2v_size, "dens: ", pab2v_sparse.nnz/pab2v_size)
+        import sys
+        sys.exit()
+        return pab2v
+
+
     def get_dp_vertex_array(self, dtype=np.float64):
         """
         Returns the product vertex coefficients as 3d array for dominant products
@@ -1159,7 +1217,7 @@ class prod_basis:
 #
 
 if __name__ == '__main__':
-    from pyscf.nao import prod_basis_c, nao
+    from pyscf.nao import nao
     from pyscf.nao.m_overlap_coo import overlap_coo
     from pyscf import gto
     import numpy as np
@@ -1169,10 +1227,10 @@ if __name__ == '__main__':
     sv = nao(gto=mol)
     print(sv.atom2s)
     s_ref = overlap_coo(sv).todense()
-    pb = prod_basis_c()
+    pb = prod_basis()
     pb.init_prod_basis_pp_batch(sv)
     (mom0, mom1) = pb.comp_moments()
-    pab2v = pb.get_ac_vertex_array()
+    pab2v = pb.get_ac_vertex_array_sparse()
     s_chk = einsum('pab,p->ab', pab2v, mom0)
     print(abs(s_chk - s_ref).sum() / s_chk.size, abs(s_chk
           - s_ref).max())

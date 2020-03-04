@@ -2,6 +2,32 @@ from __future__ import print_function, division
 import numpy as np
 from scipy.sparse import coo_matrix
 from timeit import default_timer as timer
+import sparse
+
+def combine_matrices(mat_list):
+    """
+    Combine together a list of multidimensional sparse matrices
+    """
+
+    ndim = mat_list[0]["mat"].coords.shape[0]
+    nnz = 0
+    for mat in mat_list:
+        nnz += mat["mat"].nnz
+
+    coords = np.zeros((ndim, nnz), dtype=np.int32)
+    data = np.zeros((nnz), dtype=mat_list[0]["mat"].dtype)
+    st_nnz = 0
+    for mat in mat_list:
+        st_idx = mat["st_idx"]
+
+        for idim, st in enumerate(mat["st_idx"]):
+            coords[idim, st_nnz:st_nnz+mat["mat"].nnz] = \
+                    mat["mat"].coords[idim, :] + st
+
+        data[st_nnz:st_nnz+mat["mat"].nnz] = mat["mat"].data
+        st_nnz += mat["mat"].nnz
+
+    return sparse.COO(coords, data)
 
 #
 #
