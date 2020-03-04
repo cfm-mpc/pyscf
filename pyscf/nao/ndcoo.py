@@ -3,8 +3,9 @@ import numpy as np
 from scipy.sparse import coo_matrix
 from timeit import default_timer as timer
 import sparse
+import numba as nb
 
-def combine_matrices(mat_list):
+def combine_matrices(mat_list, shape):
     """
     Combine together a list of multidimensional sparse matrices
     """
@@ -27,7 +28,115 @@ def combine_matrices(mat_list):
         data[st_nnz:st_nnz+mat["mat"].nnz] = mat["mat"].data
         st_nnz += mat["mat"].nnz
 
-    return sparse.COO(coords, data)
+    return sparse.COO(coords, data, shape=shape)
+
+def merge_COO_matrix(mat1, mat2, st_idx_mat2):
+    """
+    Merge two COO matrix
+    the coords of mat2 are shifted with st_idx_mat2
+
+    if the index is already present in mat1, the value is replaced by the
+    one in mat2
+    """
+
+    coords1 = mat1.coords
+    coords2 = mat2.coords
+
+    ndim = coords1.shape[0]
+    for idim, st in enumerate(st_idx_mat2):
+        coords2[idim, :] += st
+
+        if coords2[idim, :].max() >= mat1.shape[idim]:
+            mess = """
+            index {} > {} for dim {}
+            st_index = [{}, {}, {}]
+            """.format(coords2[idim, :].max(), mat1.shape[idim], idim,
+                    st_idx_mat2[0], st_idx_mat2[1], st_idx_mat2[2])
+            raise ValueError(mess)
+
+    nnz2add = count_nnz_toadd(coords1, coords2)
+    nnz = mat1.nnz + nnz2add
+
+    index2add = get_index_and_replace(coords1, mat1.data,
+                                      coords2, mat2.data, nnz2add)
+
+    if index2add.size < 1:
+        return mat1
+    
+    coords, data = add_new_values(ndim, nnz, mat1.coords, mat1.data, mat2.coords,
+                                  mat2.data, index2add)
+    
+    return sparse.COO(coords, data, shape=mat1.shape)
+
+@nb.jit(nopython=True)
+def add_new_values(ndim, nnz, coords1, data1, coords2, data2, index2add):
+
+    nnz1 = data1.size
+    coords = np.zeros((ndim, nnz), dtype=np.int32)
+    data = np.zeros((nnz), dtype=data1.dtype)
+
+    coords[:, 0:nnz1] = coords1
+    data[0:nnz1] = data1
+
+    innz = data1.size
+    for idx in index2add:
+
+        for idim in range(ndim):
+            coords[idim, innz] = coords2[idim, idx]
+
+        data[innz] = data2[idx]
+        innz += 1
+    
+    return coords, data
+
+
+@nb.jit(nopython=True)
+def count_nnz_toadd(coords1, coords2):
+
+    nnz = 0
+    for i2, j2, k2 in zip(coords2[0, :], coords2[1, :], coords2[2, :]):
+
+        toadd = True
+        for i1, j1, k1 in zip(coords1[0, :], coords1[1, :], coords1[2, :]):
+
+            # if data in mat1, replace value
+            if i1 == i2 and j1 == j2 and k1 == k2:
+                toadd = False
+                break
+
+        # if data not in mat 1, must be added
+        if toadd:
+            nnz += 1
+
+    return nnz
+
+@nb.jit(nopython=True)
+def get_index_and_replace(coords1, data1, coords2, data2, nnz2add):
+
+    index2add = np.zeros((nnz2add), dtype=np.int32)
+    innz = 0
+    index2 = 0
+    for i2, j2, k2, val2 in zip(coords2[0, :], coords2[1, :], coords2[2, :], data2):
+
+        toadd = True
+        index1 = 0
+        for i1, j1, k1 in zip(coords1[0, :], coords1[1, :], coords1[2, :]):
+
+            # if data in mat1, replace value
+            if i1 == i2 and j1 == j2 and k1 == k2:
+                data1[index1] = val2
+                toadd = False
+                break
+
+            index1 += 1
+
+        # if data not in mat 1, must be added
+        if toadd:
+            index2add[innz] = index2
+            innz += 1
+        index2 += 1
+
+    return index2add
 
 #
 #

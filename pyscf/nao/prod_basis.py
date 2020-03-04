@@ -686,7 +686,7 @@ class prod_basis:
         """
 
         import sparse
-        from pyscf.nao.ndcoo import combine_matrices
+        from pyscf.nao.ndcoo import combine_matrices, merge_COO_matrix
 
         atom2so = self.sv.atom2s
         nfap = self.c2s[-1]
@@ -700,8 +700,9 @@ class prod_basis:
             if pt != 1:
                 continue
             (s, f) = atom2so[atom:atom + 2]
-            print(self.prod_log.sp2vertex[spp].shape)
+            #print(self.prod_log.sp2vertex[spp].shape)
             pab2v[sd:fd, s:f, s:f] = self.prod_log.sp2vertex[spp]
+            print(sd, fd, s, f, s, f)
             pab2v_coo_list.append({})
             pab2v_coo_list[ielem]["mat"] = sparse.COO(self.prod_log.sp2vertex[spp])
             pab2v_coo_list[ielem]["st_idx"] = np.array([sd, s, s], dtype=np.int32)
@@ -709,10 +710,10 @@ class prod_basis:
             print("nnz: ", pab2v_coo_list[ielem]["mat"].nnz, self.prod_log.sp2vertex[spp].size)
             ielem += 1
 
-        pab2v_sparse = combine_matrices(pab2v_coo_list)
+        pab2v_sparse = combine_matrices(pab2v_coo_list, (nfap, n, n))
+
+        print("max_index: ", pab2v_sparse.coords.max())
         print("diff: ", np.sum(abs(pab2v_sparse.todense() - pab2v)))
-        import sys
-        sys.exit()
 
         for (sd, fd, pt, spp) in zip(self.dpc2s, self.dpc2s[1:],
                 self.dpc2t, self.dpc2sp):
@@ -726,13 +727,24 @@ class prod_basis:
             for (c, ls, lf) in zip(inf.cc2a, inf.cc2s, inf.cc2s[1:]):
                 pab2v[self.c2s[c]:self.c2s[c + 1], sa:fa, sb:fb] = \
                     lab[ls:lf, :, :]
+
+                lab_sparse = sparse.COO(lab[ls:lf, :, :])
+                st_idx = np.array([self.c2s[c], sa, sb])
+                pab2v_sparse = merge_COO_matrix(pab2v_sparse, lab_sparse, st_idx)
+
                 pab2v[self.c2s[c]:self.c2s[c + 1], sb:fb, sa:fa] = \
                     einsum('pab->pba', lab[ls:lf, :, :])
+                
+                lab_sparse = sparse.COO(einsum('pab->pba', lab[ls:lf, :, :]))
+                st_idx = np.array([self.c2s[c], sb, sa])
+                pab2v_sparse = merge_COO_matrix(pab2v_sparse, lab_sparse, st_idx)
 
-        pab2v_sparse = sparse.COO(pab2v)
+        sparse_ref = sparse.COO(pab2v)
         print(pab2v_sparse.nnz, pab2v_sparse.shape)
         pab2v_size = nfap*n*n
+        print("nnz: ", sparse_ref.nnz, pab2v_sparse.nnz)
         print("size: ", pab2v_size, "dens: ", pab2v_sparse.nnz/pab2v_size)
+        print("diff: ", np.sum(abs(pab2v_sparse.todense() - pab2v)))
         import sys
         sys.exit()
         return pab2v
