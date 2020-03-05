@@ -96,17 +96,21 @@ class gw_iter(gw):
     return [[diff/summ] , [np.amax(abs(diff))] ,[tol]]
 
   #@profile
-  def gw_xvx (self, algo=None):
+  def gw_xvx(self, algo=None):
     """
-     calculates basis products \Psi(r')\Psi(r') = XVX[spin,(nn, norbs, nprod)] = X_{a}^{n}V_{\nu}^{ab}X_{b}^{m} using 4-methods
-     1- direct multiplication by using np.dot and np.einsum via swapping between axis
-     2- using atom-centered product basis
-     3- using atom-centered product basis and BLAS multiplication
-     4- using dominant product basis
-     5- using dominant product basis in COOrdinate format
+     calculates basis products
+     \Psi(r')\Psi(r') = XVX[spin,(nn, norbs, nprod)] = X_{a}^{n}V_{\nu}^{ab}X_{b}^{m}
+     
+     using 4-methods:
+        1- direct multiplication by using np.dot and np.einsum via swapping between axis
+        2- using atom-centered product basis
+        3- using atom-centered product basis and BLAS multiplication
+        4- using dominant product basis
+        5- using dominant product basis in COOrdinate format
     """
     
     algol = algo.lower() if algo is not None else 'dp_coo'  
+    print("gw_xvx algo: ", algol)
     xvx=[]
 
     # we should write function for each algo
@@ -145,12 +149,32 @@ class gw_iter(gw):
     #3-atom-centered product basis and BLAS
     elif algol=='blas':
         from pyscf.nao.m_rf0_den import calc_XVX      #uses BLAS
-        v = np.einsum('pab->apb', self.pb.get_ac_vertex_array())
+        import sparse
+
+        v = self.pb.get_ac_vertex_array_sparse().transpose(axes=(1, 0, 2))
+        #v = np.einsum('pab->apb', self.pb.get_ac_vertex_array())
+
         for s in range(self.nspin):
-            vx = np.dot(v, self.mo_coeff[0,s,self.nn[s],:,0].T)
+            #vx = np.dot(v, self.mo_coeff[0,s,self.nn[s],:,0].T)
+            # Equivalent to
+            # B = self.mo_coeff[0,s,self.nn[s],:,0].T
+            # vx = np.zeros((v.shape[0], v.shape[1], B.shape[1]))
+            # for i in range(v.shape[0]):
+            #     vx[i, :, :] = v[i, :, :].dot(B)
+
+            #print("nn: ", self.nn[s])
+            #print("mo_coeff.shape: ", self.mo_coeff[0,s,:,:,0].shape)
+            #print("v_pab.shape: ", v.shape)
+            
+            vx = v.dot(self.mo_coeff[0,s,self.nn[s],:,0].T)
+            #print(type(vx_sp))
+            print("shape: ", vx.shape)
+            print("mo_coeff_nn.shape: ", self.mo_coeff[0,s,self.nn[s],:,0].T.shape)
+            #print("diff: ", np.sum(abs(vx_sp - vx)))
             xvx0 = calc_XVX(self.mo_coeff[0,s,:,:,0], vx)
+            #print("xvx0.shape: ", xvx0.shape)
             xvx.append(xvx0.T)          
-        
+
     #4-dominant product basis
     elif algol=='dp':
         size = self.cc_da.shape[0]
