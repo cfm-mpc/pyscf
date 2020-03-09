@@ -150,9 +150,12 @@ class gw_iter(gw):
     elif algol=='blas':
         from pyscf.nao.m_rf0_den import calc_XVX      #uses BLAS
         import sparse
+        import scipy.sparse as sp
 
         v = self.pb.get_ac_vertex_array_sparse().transpose(axes=(1, 0, 2))
         #v = np.einsum('pab->apb', self.pb.get_ac_vertex_array())
+        print("Vpab: ", v.shape)
+        print("Vpab: ", v.nnz)
 
         for s in range(self.nspin):
             #vx = np.dot(v, self.mo_coeff[0,s,self.nn[s],:,0].T)
@@ -165,15 +168,19 @@ class gw_iter(gw):
             #print("nn: ", self.nn[s])
             #print("mo_coeff.shape: ", self.mo_coeff[0,s,:,:,0].shape)
             #print("v_pab.shape: ", v.shape)
-            
+
             vx = v.dot(self.mo_coeff[0,s,self.nn[s],:,0].T)
             #print(type(vx_sp))
-            print("shape: ", vx.shape)
+            print("vx.shape: ", vx.shape)
             print("mo_coeff_nn.shape: ", self.mo_coeff[0,s,self.nn[s],:,0].T.shape)
+            print("mo_coeff.shape: ", self.mo_coeff[0,s,:,:,0].shape)
             #print("diff: ", np.sum(abs(vx_sp - vx)))
             xvx0 = calc_XVX(self.mo_coeff[0,s,:,:,0], vx)
-            #print("xvx0.shape: ", xvx0.shape)
+            print("xvx0.shape: ", xvx0.shape)
             xvx.append(xvx0.T)          
+
+        import sys
+        sys.exit()
 
     #4-dominant product basis
     elif algol=='dp':
