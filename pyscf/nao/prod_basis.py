@@ -657,13 +657,16 @@ class prod_basis:
         n = self.sv.atom2s[-1]
         pab2v = np.require(zeros((nfap, n, n), dtype=dtype),
                            requirements='CW')
+        print("look")
         for (atom, [sd, fd, pt, spp]) in enumerate(zip(self.dpc2s,
                 self.dpc2s[1:], self.dpc2t, self.dpc2sp)):
             if pt != 1:
                 continue
             (s, f) = atom2so[atom:atom + 2]
+            print(sd, fd)
             pab2v[sd:fd, s:f, s:f] = self.prod_log.sp2vertex[spp]
 
+        print("second part")
         for (sd, fd, pt, spp) in zip(self.dpc2s, self.dpc2s[1:],
                 self.dpc2t, self.dpc2sp):
             if pt != 2:
@@ -674,6 +677,7 @@ class prod_basis:
             (sa, fa, sb, fb) = (atom2so[a], atom2so[a + 1], atom2so[b],
                                 atom2so[b + 1])
             for (c, ls, lf) in zip(inf.cc2a, inf.cc2s, inf.cc2s[1:]):
+                print(self.c2s[c], self.c2s[c + 1])
                 pab2v[self.c2s[c]:self.c2s[c + 1], sa:fa, sb:fb] = \
                     lab[ls:lf, :, :]
                 pab2v[self.c2s[c]:self.c2s[c + 1], sb:fb, sa:fa] = \
@@ -719,11 +723,15 @@ class prod_basis:
             for (c, ls, lf) in zip(inf.cc2a, inf.cc2s, inf.cc2s[1:]):
                 lab_sparse = sparse.COO(lab[ls:lf, :, :])
                 st_idx = np.array([self.c2s[c], sa, sb])
-                pab2v_sparse = merge_COO_matrix(pab2v_sparse, lab_sparse, st_idx)
+                fn_idx = np.array([self.c2s[c + 1], fa, fb])
+                pab2v_sparse = merge_COO_matrix(pab2v_sparse, lab_sparse, st_idx,
+                                                fn_idx)
 
                 lab_sparse = sparse.COO(einsum('pab->pba', lab[ls:lf, :, :]))
                 st_idx = np.array([self.c2s[c], sb, sa])
-                pab2v_sparse = merge_COO_matrix(pab2v_sparse, lab_sparse, st_idx)
+                fn_idx = np.array([self.c2s[c + 1], fb, fa])
+                pab2v_sparse = merge_COO_matrix(pab2v_sparse, lab_sparse, st_idx,
+                                                fn_idx)
 
         return pab2v_sparse
 

@@ -30,7 +30,7 @@ def combine_matrices(mat_list, shape):
 
     return sparse.COO(coords, data, shape=shape)
 
-def merge_COO_matrix(mat1, mat2, st_idx_mat2):
+def merge_COO_matrix(mat1, mat2, st_idx_mat2, fn_idx_mat2):
     """
     Merge two COO matrix
     the coords of mat2 are shifted with st_idx_mat2
@@ -54,11 +54,12 @@ def merge_COO_matrix(mat1, mat2, st_idx_mat2):
                     st_idx_mat2[0], st_idx_mat2[1], st_idx_mat2[2])
             raise ValueError(mess)
 
-    nnz2add = count_nnz_toadd(coords1, coords2)
+    nnz2add = count_nnz_toadd(coords1, coords2, st_idx_mat2, fn_idx_mat2)
     nnz = mat1.nnz + nnz2add
 
     index2add = get_index_and_replace(coords1, mat1.data,
-                                      coords2, mat2.data, nnz2add)
+                                      coords2, mat2.data, nnz2add,
+                                      st_idx_mat2, fn_idx_mat2)
 
     if index2add.size < 1:
         return mat1
@@ -91,13 +92,17 @@ def add_new_values(ndim, nnz, coords1, data1, coords2, data2, index2add):
 
 
 @nb.jit(nopython=True)
-def count_nnz_toadd(coords1, coords2):
+def count_nnz_toadd(coords1, coords2, st_idx, fn_idx):
 
     nnz = 0
     for i2, j2, k2 in zip(coords2[0, :], coords2[1, :], coords2[2, :]):
 
         toadd = True
         for i1, j1, k1 in zip(coords1[0, :], coords1[1, :], coords1[2, :]):
+            
+            if i1 < st_idx[0] or i1 > fn_idx[0]: continue
+            if j1 < st_idx[1] or j1 > fn_idx[1]: continue
+            if k1 < st_idx[2] or k1 > fn_idx[2]: continue
 
             # if data in mat1, replace value
             if i1 == i2 and j1 == j2 and k1 == k2:
@@ -111,7 +116,7 @@ def count_nnz_toadd(coords1, coords2):
     return nnz
 
 @nb.jit(nopython=True)
-def get_index_and_replace(coords1, data1, coords2, data2, nnz2add):
+def get_index_and_replace(coords1, data1, coords2, data2, nnz2add, st_idx, fn_idx):
 
     index2add = np.zeros((nnz2add), dtype=np.int32)
     innz = 0
@@ -121,6 +126,10 @@ def get_index_and_replace(coords1, data1, coords2, data2, nnz2add):
         toadd = True
         index1 = 0
         for i1, j1, k1 in zip(coords1[0, :], coords1[1, :], coords1[2, :]):
+
+            if i1 < st_idx[0] or i1 > fn_idx[0]: continue
+            if j1 < st_idx[1] or j1 > fn_idx[1]: continue
+            if k1 < st_idx[2] or k1 > fn_idx[2]: continue
 
             # if data in mat1, replace value
             if i1 == i2 and j1 == j2 and k1 == k2:
