@@ -151,7 +151,7 @@ class gw_iter(gw):
         from pyscf.nao.m_rf0_den import calc_XVX      #uses BLAS
 
         t1 = timer()
-        v = self.pb.get_ac_vertex_array_sparse_lil().transpose(axes=(1, 0, 2))
+        v = self.pb.get_ac_vertex_array_sparse_coo().transpose(axes=(1, 0, 2))
         #v = np.einsum('pab->apb', self.pb.get_ac_vertex_array())
         t2 = timer()
         print("Get AC vertex timing: ", t2-t1)
@@ -455,7 +455,8 @@ class gw_iter(gw):
 
         if self.restart is True: 
             from pyscf.nao.m_restart import read_rst_h5py
-            self.snmw2sf, msg = read_rst_h5py(value='screened_interactions',filename= 'RESTART.hdf5')
+            self.snmw2sf, msg = read_rst_h5py(value='screened_interactions',
+                                              filename= 'RESTART.hdf5')
             print(msg)  
 
         else:
@@ -476,7 +477,7 @@ class gw_iter(gw):
     """
     
     from scipy.sparse.linalg import lgmres, LinearOperator
-    v_pab = self.pb.get_ac_vertex_array_sparse_lil()
+    v_pab = self.pb.get_ac_vertex_array_sparse_coo()
     sn2res = [np.zeros_like(n2w, dtype=self.dtype) for n2w in sn2w ]   
     k_c_opt = LinearOperator((self.nprod,self.nprod), matvec=self.gw_vext2veffmatvec, dtype=self.dtypeComplex)  
     for s,ww in enumerate(sn2w):

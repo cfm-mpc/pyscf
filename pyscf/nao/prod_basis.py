@@ -9,6 +9,8 @@ from ctypes import POINTER, c_double, c_int64, byref
 from pyscf.nao.m_libnao import libnao
 from timeit import default_timer as timer
 
+#from memory_profiler import profile
+
 libnao.init_vrtx_cc_apair.argtypes = (POINTER(c_double),
         POINTER(c_int64))
 
@@ -647,6 +649,7 @@ class prod_basis:
         return sparseformat((data, (irow, icol)), dtype=dtype,
                             shape=(nfdp, nfap))
 
+    #@profile
     def get_ac_vertex_array(self, dtype=np.float64):
         """
         Returns the product vertex coefficients as 3d array (dense table)
@@ -680,9 +683,55 @@ class prod_basis:
                     einsum('pab->pba', lab[ls:lf, :, :])
         return pab2v
 
+    #@profile
+    def get_ac_vertex_array_sparse_coo(self, dtype=np.float64):
+        """
+        Returns the product vertex coefficients as a 3D COO sparse matrix
+        """
+
+        nfap = self.c2s[-1]
+        n = self.sv.atom2s[-1]
+
+        # get the non zeros elements
+        coords, data = self.get_coords_data(dtype=dtype)
+
+        import sparse
+        pab2v = sparse.COO(coords, data, shape=(nfap, n, n))
+
+        return pab2v
+
+    #@profile
+    def get_coords_data(self, dtype=np.float64):
+        """
+        Return the coords (array index) and non zeros elements
+        for building a 3D COO sparse matrix for the vertex
+        """
+
+        lil_matrices = self.get_ac_vertex_array_sparse_lil(dtype=dtype)
+        
+        nnz = 0
+        for ifap, matlil in enumerate(lil_matrices):
+            nnz += matlil.nnz
+
+        coords = np.zeros((3, nnz), dtype=np.int32)
+        data = np.zeros((nnz), dtype=dtype)
+        st = 0
+        for ifap, matlil in enumerate(lil_matrices):
+            fn = st + matlil.nnz
+            matcoo = matlil.tocoo()
+            coords[0, st:fn] = ifap
+            coords[1, st:fn] = matcoo.row
+            coords[2, st:fn] = matcoo.col
+            data[st:fn] = matcoo.data
+
+            st += matlil.nnz
+
+        return coords, data
+
+    #@profile
     def get_ac_vertex_array_sparse_lil(self, dtype=np.float64):
         """
-        Returns the product vertex coefficients as 3d array (dense table)
+        Returns the product vertex coefficients as a list of 2D lil sparse matrix
         """
 
         atom2so = self.sv.atom2s
@@ -738,24 +787,7 @@ class prod_basis:
                             pab2v[ifap][irow, icol] = tmp_mat[irow, icol]
                     nnz += tmp_mat.nnz
 
-        coords = np.zeros((3, nnz), dtype=np.int32)
-        data = np.zeros((nnz), dtype=dtype)
-        st = 0
-        for ifap, matlil in enumerate(pab2v):
-            fn = st + matlil.nnz
-            matcoo = matlil.tocoo()
-            coords[0, st:fn] = ifap
-            coords[1, st:fn] = matcoo.row
-            coords[2, st:fn] = matcoo.col
-            data[st:fn] = matcoo.data
-
-            st += matlil.nnz
-
-        import sparse
-        pab2v_sp = sparse.COO(coords, data, shape=(nfap, n, n))
-
-        return pab2v_sp
-
+        return pab2v
 
     def get_ac_vertex_array_sparse(self, dtype=np.float64):
         """
@@ -1282,19 +1314,19 @@ class prod_basis:
         b = coo_matrix((c.data, (new_row, new_col)), shape=shape)
         return b
 
-
-#
-#
-#
-
-if __name__ == '__main__':
+#@profile
+def test():
     from pyscf.nao import nao
     from pyscf.nao.m_overlap_coo import overlap_coo
     from pyscf import gto
     import numpy as np
 
+    water_string = ""
+    Nmol = 3
+    for imol in range(Nmol):
+        water_string += "O {0:.1f} 0 0; H {0:.1f} 0 0.5; H {0:.1f} 0.5 0;".format(2*imol)
     # coordinates in Angstrom!
-    mol = gto.M(atom='O 0 0 0; H 0 0 0.5; H 0 0.5 0', basis='ccpvdz')
+    mol = gto.M(atom=water_string, basis='ccpvdz')
     sv = nao(gto=mol)
     print(sv.atom2s)
     s_ref = overlap_coo(sv).todense()
@@ -1302,9 +1334,16 @@ if __name__ == '__main__':
     pb.init_prod_basis_pp_batch(sv)
     (mom0, mom1) = pb.comp_moments()
     pab2v = pb.get_ac_vertex_array()
-    pab2v_sparse = pb.get_ac_vertex_array_sparse_lil()
+    pab2v_sparse = pb.get_ac_vertex_array_sparse_coo()
     #pab2v_sparse = pb.get_ac_vertex_array_sparse()
     print("diff sparse - dense: ", np.sum(abs(pab2v_sparse.todense() - pab2v)))
     s_chk = einsum('pab,p->ab', pab2v, mom0)
     print(abs(s_chk - s_ref).sum() / s_chk.size, abs(s_chk
           - s_ref).max())
+#
+#
+#
+
+if __name__ == '__main__':
+    test()
+
