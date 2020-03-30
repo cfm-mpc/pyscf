@@ -476,7 +476,7 @@ class gw_iter(gw):
     """
     
     from scipy.sparse.linalg import lgmres, LinearOperator
-    v_pab = self.pb.get_ac_vertex_array()
+    v_pab = self.pb.get_ac_vertex_array_sparse_lil()
     sn2res = [np.zeros_like(n2w, dtype=self.dtype) for n2w in sn2w ]   
     k_c_opt = LinearOperator((self.nprod,self.nprod), matvec=self.gw_vext2veffmatvec, dtype=self.dtypeComplex)  
     for s,ww in enumerate(sn2w):
@@ -486,7 +486,7 @@ class gw_iter(gw):
         zww = array([pole[0] for pole in lsos])
         stw = array([pole[1] for pole in lsos])
         if self.verbosity>3: print('states located inside contour: #',stw)
-        xv = np.dot(v_pab,x[n])
+        xv = v_pab.dot(x[n])
         for pole, z_real in zip(lsos, zww):
           self.comega_current = z_real
           xvx = np.dot(xv, x[pole[1]])
