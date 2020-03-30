@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 from __future__ import print_function, division
 import numpy as np
-from scipy.sparse import coo_matrix
+from scipy.sparse import coo_matrix, lil_matrix
 from pyscf.nao.lsofcsr import lsofcsr_c
 from numpy import array, einsum, zeros, int64, sqrt, int32
 from ctypes import POINTER, c_double, c_int64, byref
@@ -657,16 +657,13 @@ class prod_basis:
         n = self.sv.atom2s[-1]
         pab2v = np.require(zeros((nfap, n, n), dtype=dtype),
                            requirements='CW')
-        print("look")
         for (atom, [sd, fd, pt, spp]) in enumerate(zip(self.dpc2s,
                 self.dpc2s[1:], self.dpc2t, self.dpc2sp)):
             if pt != 1:
                 continue
             (s, f) = atom2so[atom:atom + 2]
-            print(sd, fd)
             pab2v[sd:fd, s:f, s:f] = self.prod_log.sp2vertex[spp]
 
-        print("second part")
         for (sd, fd, pt, spp) in zip(self.dpc2s, self.dpc2s[1:],
                 self.dpc2t, self.dpc2sp):
             if pt != 2:
@@ -677,12 +674,88 @@ class prod_basis:
             (sa, fa, sb, fb) = (atom2so[a], atom2so[a + 1], atom2so[b],
                                 atom2so[b + 1])
             for (c, ls, lf) in zip(inf.cc2a, inf.cc2s, inf.cc2s[1:]):
-                print(self.c2s[c], self.c2s[c + 1])
                 pab2v[self.c2s[c]:self.c2s[c + 1], sa:fa, sb:fb] = \
                     lab[ls:lf, :, :]
                 pab2v[self.c2s[c]:self.c2s[c + 1], sb:fb, sa:fa] = \
                     einsum('pab->pba', lab[ls:lf, :, :])
         return pab2v
+
+    def get_ac_vertex_array_sparse_lil(self, dtype=np.float64):
+        """
+        Returns the product vertex coefficients as 3d array (dense table)
+        """
+
+        atom2so = self.sv.atom2s
+        nfap = self.c2s[-1]
+        n = self.sv.atom2s[-1]
+        pab2v = []
+
+        for ifap in range(nfap):
+            pab2v.append(None)
+
+        nnz = 0
+        for (atom, [sd, fd, pt, spp]) in enumerate(zip(self.dpc2s,
+                self.dpc2s[1:], self.dpc2t, self.dpc2sp)):
+            if pt != 1:
+                continue
+            (s, f) = atom2so[atom:atom + 2]
+
+            pab2v_tmp = self.prod_log.sp2vertex[spp]
+            for ifap in range(sd, fd):
+                tmp = np.zeros((n, n), dtype=np.float64)
+                tmp[s:f, s:f] = pab2v_tmp[ifap-sd, :, :]
+                pab2v[ifap] = lil_matrix(tmp)
+                nnz += pab2v[ifap].nnz
+
+        for (sd, fd, pt, spp) in zip(self.dpc2s, self.dpc2s[1:],
+                self.dpc2t, self.dpc2sp):
+            if pt != 2:
+                continue
+            inf = self.bp2info[spp]
+            lab = einsum('dl,dab->lab', inf.cc, inf.vrtx)
+            (a, b) = inf.atoms
+            (sa, fa, sb, fb) = (atom2so[a], atom2so[a + 1], atom2so[b],
+                                atom2so[b + 1])
+            for (c, ls, lf) in zip(inf.cc2a, inf.cc2s, inf.cc2s[1:]):
+
+                for ifap, ilab in zip(range(self.c2s[c], self.c2s[c + 1]),
+                                      range(ls, lf)):
+                    tmp = np.zeros((n, n), dtype=np.float64)
+                    tmp[sa:fa, sb:fb] = lab[ilab, :, :]
+                    tmp_mat = lil_matrix(tmp)
+                    for irow, colindex in enumerate(tmp_mat.rows):
+                        for icol in colindex:
+                            pab2v[ifap][irow, icol] = tmp_mat[irow, icol]
+                    nnz += tmp_mat.nnz
+
+                lab_T = einsum('pab->pba', lab[ls:lf, :, :])
+                for ilab, ifap in enumerate(range(self.c2s[c], self.c2s[c + 1])):
+                    tmp = np.zeros((n, n), dtype=np.float64)
+                    tmp[sb:fb, sa:fa] = lab_T[ilab, :, :]
+                    tmp_mat = lil_matrix(tmp)
+                    for irow, colindex in enumerate(tmp_mat.rows):
+                        for icol in colindex:
+                            pab2v[ifap][irow, icol] = tmp_mat[irow, icol]
+                    nnz += tmp_mat.nnz
+
+        coords = np.zeros((3, nnz), dtype=np.int32)
+        data = np.zeros((nnz), dtype=dtype)
+        st = 0
+        for ifap, matlil in enumerate(pab2v):
+            fn = st + matlil.nnz
+            matcoo = matlil.tocoo()
+            coords[0, st:fn] = ifap
+            coords[1, st:fn] = matcoo.row
+            coords[2, st:fn] = matcoo.col
+            data[st:fn] = matcoo.data
+
+            st += matlil.nnz
+
+        import sparse
+        pab2v_sp = sparse.COO(coords, data, shape=(nfap, n, n))
+
+        return pab2v_sp
+
 
     def get_ac_vertex_array_sparse(self, dtype=np.float64):
         """
@@ -1229,7 +1302,8 @@ if __name__ == '__main__':
     pb.init_prod_basis_pp_batch(sv)
     (mom0, mom1) = pb.comp_moments()
     pab2v = pb.get_ac_vertex_array()
-    pab2v_sparse = pb.get_ac_vertex_array_sparse()
+    pab2v_sparse = pb.get_ac_vertex_array_sparse_lil()
+    #pab2v_sparse = pb.get_ac_vertex_array_sparse()
     print("diff sparse - dense: ", np.sum(abs(pab2v_sparse.todense() - pab2v)))
     s_chk = einsum('pab,p->ab', pab2v, mom0)
     print(abs(s_chk - s_ref).sum() / s_chk.size, abs(s_chk
