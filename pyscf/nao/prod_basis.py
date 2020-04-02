@@ -1,10 +1,11 @@
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
 from __future__ import print_function, division
+import gc
 import numpy as np
 from scipy.sparse import coo_matrix, lil_matrix
 from pyscf.nao.lsofcsr import lsofcsr_c
-from numpy import array, einsum, zeros, int64, sqrt, int32
+from numpy import einsum, zeros, int64, sqrt, int32
 from ctypes import POINTER, c_double, c_int64, byref
 from pyscf.nao.m_libnao import libnao
 from timeit import default_timer as timer
@@ -236,7 +237,7 @@ class prod_basis:
                 if ndp < 1:
                     continue
                 (sp1, sp2, ncc) = (srncc[0], srncc[1], srncc[8])
-                icc2a = array(srncc[9:9 + ncc], dtype=int64)
+                icc2a = np.array(srncc[9:9 + ncc], dtype=int64)
                 nnn = np.array((ndp, sp2norbs[sp2], sp2norbs[sp1]),
                                dtype=int64)
                 nnc = np.array([ndp, npac], dtype=int64)
@@ -250,7 +251,7 @@ class prod_basis:
                 for (icc, a) in enumerate(icc2a):
                     icc2s[icc + 1] = icc2s[icc] \
                         + self.prod_log.sp2norbs[sv.atom2sp[a]]
-                pbiloc = prod_biloc_c(atoms=array([a2, a1]), vrtx=vrtx,
+                pbiloc = prod_biloc_c(atoms=np.array([a2, a1]), vrtx=vrtx,
                         cc2a=icc2a, cc2s=icc2s, cc=ccoe)
                 self.bp2info.append(pbiloc)
 
@@ -556,7 +557,7 @@ class prod_basis:
         for (icc, a) in enumerate(icc2a):
             icc2s[icc + 1] = icc2s[icc] \
                 + self.prod_log.sp2norbs[sv.atom2sp[a]]
-        pbiloc = prod_biloc_c(atoms=array([a2, a1]), vrtx=vrtx,
+        pbiloc = prod_biloc_c(atoms=np.array([a2, a1]), vrtx=vrtx,
                               cc2a=icc2a, cc2s=icc2s, cc=ccoe)
 
         return pbiloc
@@ -694,11 +695,10 @@ class prod_basis:
 
         # get the non zeros elements
         coords, data = self.get_coords_data(dtype=dtype)
+        gc.collect()
 
         import sparse
-        pab2v = sparse.COO(coords, data, shape=(nfap, n, n))
-
-        return pab2v
+        return sparse.COO(coords, data, shape=(nfap, n, n))
 
     #@profile
     def get_coords_data(self, dtype=np.float64):
@@ -707,32 +707,38 @@ class prod_basis:
         for building a 3D COO sparse matrix for the vertex
         """
 
-        lil_matrices = self.get_ac_vertex_array_sparse_lil(dtype=dtype)
+        coo_matrices = self.get_ac_vertex_array_sparse_coo_list(dtype=dtype)
+        gc.collect()
         
         nnz = 0
-        for ifap, matlil in enumerate(lil_matrices):
-            nnz += matlil.nnz
+        for ifap, matcoo in enumerate(coo_matrices):
+            nnz += matcoo.nnz
 
         coords = np.zeros((3, nnz), dtype=np.int32)
         data = np.zeros((nnz), dtype=dtype)
         st = 0
-        for ifap, matlil in enumerate(lil_matrices):
-            fn = st + matlil.nnz
-            matcoo = matlil.tocoo()
+        for ifap in range(len(coo_matrices)):
+
+            matcoo = coo_matrices[0]
+            fn = st + matcoo.nnz
             coords[0, st:fn] = ifap
             coords[1, st:fn] = matcoo.row
             coords[2, st:fn] = matcoo.col
             data[st:fn] = matcoo.data
 
-            st += matlil.nnz
+            st += matcoo.nnz
+
+            del coo_matrices[0]
+            gc.collect()
 
         return coords, data
 
     #@profile
-    def get_ac_vertex_array_sparse_lil(self, dtype=np.float64):
+    def get_ac_vertex_array_sparse_coo_list(self, dtype=np.float64):
         """
         Returns the product vertex coefficients as a list of 2D lil sparse matrix
         """
+        from pyscf.nao.ndcoo import set_lilmatrix
 
         atom2so = self.sv.atom2s
         nfap = self.c2s[-1]
@@ -749,13 +755,12 @@ class prod_basis:
                 continue
             (s, f) = atom2so[atom:atom + 2]
 
-            pab2v_tmp = self.prod_log.sp2vertex[spp]
             for ifap in range(sd, fd):
-                tmp = np.zeros((n, n), dtype=np.float64)
-                tmp[s:f, s:f] = pab2v_tmp[ifap-sd, :, :]
-                pab2v[ifap] = lil_matrix(tmp)
+                pab2v[ifap] = set_lilmatrix(self.prod_log.sp2vertex[spp][ifap-sd, :, :],
+                                            (n, n), [s, s], [f, f])
                 nnz += pab2v[ifap].nnz
 
+        print("before loop")
         for (sd, fd, pt, spp) in zip(self.dpc2s, self.dpc2s[1:],
                 self.dpc2t, self.dpc2sp):
             if pt != 2:
@@ -767,25 +772,35 @@ class prod_basis:
                                 atom2so[b + 1])
             for (c, ls, lf) in zip(inf.cc2a, inf.cc2s, inf.cc2s[1:]):
 
+                lab_T = einsum('pab->pba', lab[ls:lf, :, :])
+                ilab2 = 0
+                print(c, self.c2s[c], self.c2s[c+1])
                 for ifap, ilab in zip(range(self.c2s[c], self.c2s[c + 1]),
                                       range(ls, lf)):
-                    tmp = np.zeros((n, n), dtype=np.float64)
-                    tmp[sa:fa, sb:fb] = lab[ilab, :, :]
-                    tmp_mat = lil_matrix(tmp)
-                    for irow, colindex in enumerate(tmp_mat.rows):
-                        for icol in colindex:
-                            pab2v[ifap][irow, icol] = tmp_mat[irow, icol]
-                    nnz += tmp_mat.nnz
+                    tmp_mat = set_lilmatrix(lab[ilab, :, :], (n, n), [sa, sb],
+                                            [fa, fb])
+                    if pt == 1:
+                        pab2v[ifap] = tmp_mat
+                        nnz += pab2v[ifap].nnz
+                    else:
+                        for irow, colindex in enumerate(tmp_mat.rows):
+                            for icol in colindex:
+                                pab2v[ifap][irow, icol] = tmp_mat[irow, icol]
+                        nnz += tmp_mat.nnz
 
-                lab_T = einsum('pab->pba', lab[ls:lf, :, :])
-                for ilab, ifap in enumerate(range(self.c2s[c], self.c2s[c + 1])):
-                    tmp = np.zeros((n, n), dtype=np.float64)
-                    tmp[sb:fb, sa:fa] = lab_T[ilab, :, :]
-                    tmp_mat = lil_matrix(tmp)
+                #for ilab, ifap in enumerate(range(self.c2s[c], self.c2s[c + 1])):
+                    tmp_mat = set_lilmatrix(lab_T[ilab2, :, :], (n, n), [sb, sa],
+                                            [fb, fa])
+
                     for irow, colindex in enumerate(tmp_mat.rows):
                         for icol in colindex:
                             pab2v[ifap][irow, icol] = tmp_mat[irow, icol]
                     nnz += tmp_mat.nnz
+                    ilab2 += 1
+
+        # convert to coo format
+        for ifap in range(len(pab2v)):
+            pab2v[ifap] = pab2v[ifap].tocoo()
 
         return pab2v
 
@@ -1322,7 +1337,7 @@ def test():
     import numpy as np
 
     water_string = ""
-    Nmol = 3
+    Nmol = 1
     for imol in range(Nmol):
         water_string += "O {0:.1f} 0 0; H {0:.1f} 0 0.5; H {0:.1f} 0.5 0;".format(2*imol)
     # coordinates in Angstrom!
