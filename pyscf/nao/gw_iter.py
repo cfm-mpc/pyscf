@@ -41,10 +41,12 @@ class gw_iter(gw):
 
     self.gw_iter_tol = kw['gw_iter_tol'] if 'gw_iter_tol' in kw else 1e-4
     self.maxiter = kw['maxiter'] if 'maxiter' in kw else 1000
+    self.gw_xvx_algo = kw['gw_xvx_algo'] if 'gw_xvx_algo' in kw else "blas"
     if 'vertex_matrix_format' in kw:
         self.vertex_matrix_format = kw['vertex_matrix_format']
     else:
         self.vertex_matrix_format = "dense"
+
 
     self.limited_nbnd = kw['limited_nbnd'] if 'limited_nbnd' in kw else False
     if (self.limited_nbnd==True and min (self.vst) < 50 ):
@@ -189,6 +191,7 @@ class gw_iter(gw):
 
     #4-dominant product basis
     elif algol=='dp':
+
         size = self.cc_da.shape[0]
         v_pd  = self.pb.get_dp_vertex_array()   #dominant product basis: V_{\widetilde{\mu}}^{ab}
         c = self.pb.get_da2cc_den()             #atom_centered functional: C_{\widetilde{\mu}}^{\mu}
@@ -285,7 +288,7 @@ class gw_iter(gw):
     from scipy.sparse.linalg import LinearOperator, lgmres
     
     ww = 1j*self.ww_ia
-    xvx= self.gw_xvx('blas')
+    xvx= self.gw_xvx(self.gw_xvx_algo)
 
     snm2i = []
     #convert k_c as full matrix into Operator
