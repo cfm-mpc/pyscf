@@ -42,11 +42,6 @@ class gw_iter(gw):
     self.gw_iter_tol = kw['gw_iter_tol'] if 'gw_iter_tol' in kw else 1e-4
     self.maxiter = kw['maxiter'] if 'maxiter' in kw else 1000
     self.gw_xvx_algo = kw['gw_xvx_algo'] if 'gw_xvx_algo' in kw else "blas"
-    if 'vertex_matrix_format' in kw:
-        self.vertex_matrix_format = kw['vertex_matrix_format']
-    else:
-        self.vertex_matrix_format = "dense"
-
 
     self.limited_nbnd = kw['limited_nbnd'] if 'limited_nbnd' in kw else False
     if (self.limited_nbnd==True and min (self.vst) < 50 ):
@@ -155,27 +150,46 @@ class gw_iter(gw):
             xvx1 = np.swapaxes(xvx1,1,2)
             xvx.append(xvx1)
 
-    #3-atom-centered product basis and BLAS
+    # 3-atom-centered product basis and BLAS
     elif algol=='blas':
         
         #uses BLAS
         from pyscf.nao.m_rf0_den import calc_XVX
 
         t1 = timer()
-        if self.vertex_matrix_format == "sparse":
-            v = self.pb.get_ac_vertex_array(matformat=self.vertex_matrix_format,
-                                            dtype=self.dtype).transpose(axes=(1, 0, 2))
-        elif self.vertex_matrix_format == "dense":
-            v = np.einsum('pab->apb', self.pb.get_ac_vertex_array())
-        else:
-            raise ValueError("unknow matrix format {}".format(self.vertex_matrix_format))
+        v = np.einsum('pab->apb', self.pb.get_ac_vertex_array())
         t2 = timer()
 
         if self.verbosity>3:
             print("Get AC vertex timing: ", t2-t1)
             print("Vpab.shape: ", v.shape)
-            if self.vertex_matrix_format == "sparse":
-                print("Vpab.nnz: ", v.nnz)
+
+        for s in range(self.nspin):
+            #vx = np.dot(v, self.mo_coeff[0,s,self.nn[s],:,0].T)
+            # Equivalent to
+            # B = self.mo_coeff[0,s,self.nn[s],:,0].T
+            # vx = np.zeros((v.shape[0], v.shape[1], B.shape[1]))
+            # for i in range(v.shape[0]):
+            #     vx[i, :, :] = v[i, :, :].dot(B)
+
+            vx = v.dot(self.mo_coeff[0,s,self.nn[s],:,0].T)
+            xvx0 = calc_XVX(self.mo_coeff[0,s,:,:,0], vx)
+            xvx.append(xvx0.T)          
+
+    elif algol=='ac_sparse':
+        
+        #uses BLAS
+        from pyscf.nao.m_rf0_den import calc_XVX
+
+        t1 = timer()
+        v = self.pb.get_ac_vertex_array(matformat=self.vertex_matrix_format,
+                                        dtype=self.dtype).transpose(axes=(1, 0, 2))
+        t2 = timer()
+
+        if self.verbosity>3:
+            print("Get AC vertex timing: ", t2-t1)
+            print("Vpab.shape: ", v.shape)
+            print("Vpab.nnz: ", v.nnz)
 
         for s in range(self.nspin):
             #vx = np.dot(v, self.mo_coeff[0,s,self.nn[s],:,0].T)
