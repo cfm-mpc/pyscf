@@ -1,4 +1,3 @@
-#!/usr/bin/python
 # -*- coding: utf-8 -*-
 from __future__ import print_function, division
 import gc
@@ -9,8 +8,6 @@ from numpy import einsum, zeros, int64, sqrt, int32
 from ctypes import POINTER, c_double, c_int64, byref
 from pyscf.nao.m_libnao import libnao
 from timeit import default_timer as timer
-
-#from memory_profiler import profile
 
 libnao.init_vrtx_cc_apair.argtypes = (POINTER(c_double),
         POINTER(c_int64))
@@ -45,7 +42,6 @@ libnao.get_vrtx_cc_batch.argtypes = (
 #
 #
 #
-
 class prod_basis:
     '''
     Holder of local and bilocal product functions and vertices.
