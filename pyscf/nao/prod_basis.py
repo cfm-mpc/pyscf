@@ -650,8 +650,27 @@ class prod_basis:
         return sparseformat((data, (irow, icol)), dtype=dtype,
                             shape=(nfdp, nfap))
 
-    #@profile
-    def get_ac_vertex_array(self, dtype=np.float64):
+    def get_ac_vertex_array(self, dtype=np.float64, matformat="dense"):
+        """
+        Returns the product vertex coefficients as 3d array in dense or sparse
+        format.
+
+        The dense format is much faster to obtain, but memory prohibitive for
+        large systems.
+        The sparse format is much slower to obtain, but permit to greatly save
+        memory for large systems (more than 60 atoms)
+        """
+
+        if matformat == "dense":
+            pab2v = self.get_ac_vertex_array_dense(dtype=dtype)
+        elif matformat == "sparse":
+            pab2v = self.get_ac_vertex_array_sparse_coo(dtype=dtype)
+        else:
+            raise ValueError("Unknow matrix format {}".format(matformat))
+
+        return pab2v
+
+    def get_ac_vertex_array_dense(self, dtype=np.float64):
         """
         Returns the product vertex coefficients as 3d array (dense table)
         """
@@ -684,7 +703,6 @@ class prod_basis:
                     einsum('pab->pba', lab[ls:lf, :, :])
         return pab2v
 
-    #@profile
     def get_ac_vertex_array_sparse_coo(self, dtype=np.float64):
         """
         Returns the product vertex coefficients as a 3D COO sparse matrix
@@ -700,11 +718,11 @@ class prod_basis:
         import sparse
         return sparse.COO(coords, data, shape=(nfap, n, n))
 
-    #@profile
     def get_coords_data(self, dtype=np.float64):
         """
-        Return the coords (array index) and non zeros elements
-        for building a 3D COO sparse matrix for the vertex
+        Prepare the conversion between a list of COO 2D matrices toward a fully
+        3D COO matrix by obtaining the indexing (coords) and the non zeros 
+        elements (data)
         """
 
         coo_matrices = self.get_ac_vertex_array_sparse_coo_list(dtype=dtype)
@@ -733,22 +751,22 @@ class prod_basis:
 
         return coords, data
 
-    #@profile
     def get_ac_vertex_array_sparse_coo_list(self, dtype=np.float64):
         """
-        Returns the product vertex coefficients as a list of 2D lil sparse matrix
+        Returns the product vertex coefficients as a list of 2D coo sparse matrix.
+        The matrix are first obtained with the lil format for easy indexing, then
+        converted to the COO format at the end
         """
-        from pyscf.nao.ndcoo import set_lilmatrix
 
         atom2so = self.sv.atom2s
         nfap = self.c2s[-1]
         n = self.sv.atom2s[-1]
-        pab2v = []
 
+        # list of lil matrix
+        pab2v = []
         for ifap in range(nfap):
             pab2v.append(None)
 
-        nnz = 0
         for (atom, [sd, fd, pt, spp]) in enumerate(zip(self.dpc2s,
                 self.dpc2s[1:], self.dpc2t, self.dpc2sp)):
             if pt != 1:
@@ -758,9 +776,7 @@ class prod_basis:
             for ifap in range(sd, fd):
                 pab2v[ifap] = set_lilmatrix(self.prod_log.sp2vertex[spp][ifap-sd, :, :],
                                             (n, n), [s, s], [f, f])
-                nnz += pab2v[ifap].nnz
 
-        print("before loop")
         for (sd, fd, pt, spp) in zip(self.dpc2s, self.dpc2s[1:],
                 self.dpc2t, self.dpc2sp):
             if pt != 2:
@@ -774,28 +790,23 @@ class prod_basis:
 
                 lab_T = einsum('pab->pba', lab[ls:lf, :, :])
                 ilab2 = 0
-                print(c, self.c2s[c], self.c2s[c+1])
                 for ifap, ilab in zip(range(self.c2s[c], self.c2s[c + 1]),
                                       range(ls, lf)):
                     tmp_mat = set_lilmatrix(lab[ilab, :, :], (n, n), [sa, sb],
                                             [fa, fb])
                     if pt == 1:
                         pab2v[ifap] = tmp_mat
-                        nnz += pab2v[ifap].nnz
                     else:
                         for irow, colindex in enumerate(tmp_mat.rows):
                             for icol in colindex:
                                 pab2v[ifap][irow, icol] = tmp_mat[irow, icol]
-                        nnz += tmp_mat.nnz
 
-                #for ilab, ifap in enumerate(range(self.c2s[c], self.c2s[c + 1])):
                     tmp_mat = set_lilmatrix(lab_T[ilab2, :, :], (n, n), [sb, sa],
                                             [fb, fa])
 
                     for irow, colindex in enumerate(tmp_mat.rows):
                         for icol in colindex:
                             pab2v[ifap][irow, icol] = tmp_mat[irow, icol]
-                    nnz += tmp_mat.nnz
                     ilab2 += 1
 
         # convert to coo format
@@ -803,58 +814,6 @@ class prod_basis:
             pab2v[ifap] = pab2v[ifap].tocoo()
 
         return pab2v
-
-    def get_ac_vertex_array_sparse(self, dtype=np.float64):
-        """
-        Returns the product vertex coefficients as 3d array (dense table)
-        """
-
-        import sparse
-        from pyscf.nao.ndcoo import combine_matrices, merge_COO_matrix
-
-        atom2so = self.sv.atom2s
-        nfap = self.c2s[-1]
-        n = self.sv.atom2s[-1]
-        pab2v_coo_list = []
-        ielem = 0
-        for (atom, [sd, fd, pt, spp]) in enumerate(zip(self.dpc2s,
-                self.dpc2s[1:], self.dpc2t, self.dpc2sp)):
-            if pt != 1:
-                continue
-            (s, f) = atom2so[atom:atom + 2]
-            #print(self.prod_log.sp2vertex[spp].shape)
-            pab2v_coo_list.append({})
-            pab2v_coo_list[ielem]["mat"] = sparse.COO(self.prod_log.sp2vertex[spp])
-            pab2v_coo_list[ielem]["st_idx"] = np.array([sd, s, s], dtype=np.int32)
-            pab2v_coo_list[ielem]["fn_idx"] = np.array([fd, f, f], dtype=np.int32)
-            ielem += 1
-
-        pab2v_sparse = combine_matrices(pab2v_coo_list, (nfap, n, n))
-
-        for (sd, fd, pt, spp) in zip(self.dpc2s, self.dpc2s[1:],
-                self.dpc2t, self.dpc2sp):
-            if pt != 2:
-                continue
-            inf = self.bp2info[spp]
-            lab = einsum('dl,dab->lab', inf.cc, inf.vrtx)
-            (a, b) = inf.atoms
-            (sa, fa, sb, fb) = (atom2so[a], atom2so[a + 1], atom2so[b],
-                                atom2so[b + 1])
-            for (c, ls, lf) in zip(inf.cc2a, inf.cc2s, inf.cc2s[1:]):
-                lab_sparse = sparse.COO(lab[ls:lf, :, :])
-                st_idx = np.array([self.c2s[c], sa, sb])
-                fn_idx = np.array([self.c2s[c + 1], fa, fb])
-                pab2v_sparse = merge_COO_matrix(pab2v_sparse, lab_sparse, st_idx,
-                                                fn_idx)
-
-                lab_sparse = sparse.COO(einsum('pab->pba', lab[ls:lf, :, :]))
-                st_idx = np.array([self.c2s[c], sb, sa])
-                fn_idx = np.array([self.c2s[c + 1], fb, fa])
-                pab2v_sparse = merge_COO_matrix(pab2v_sparse, lab_sparse, st_idx,
-                                                fn_idx)
-
-        return pab2v_sparse
-
 
     def get_dp_vertex_array(self, dtype=np.float64):
         """
@@ -1329,7 +1288,14 @@ class prod_basis:
         b = coo_matrix((c.data, (new_row, new_col)), shape=shape)
         return b
 
-#@profile
+def set_lilmatrix(mat_dense, shape, st_idx, fn_idx):
+    """
+    Create a lil sparse matrix from a smaller dense matrix
+    """
+    tmp = np.zeros(shape, dtype=mat_dense.dtype)
+    tmp[st_idx[0]:fn_idx[0], st_idx[1]:fn_idx[1]] = mat_dense
+    return lil_matrix(tmp, copy=True)
+
 def test():
     from pyscf.nao import nao
     from pyscf.nao.m_overlap_coo import overlap_coo
@@ -1348,10 +1314,9 @@ def test():
     pb = prod_basis()
     pb.init_prod_basis_pp_batch(sv)
     (mom0, mom1) = pb.comp_moments()
-    pab2v = pb.get_ac_vertex_array()
-    pab2v_sparse = pb.get_ac_vertex_array_sparse_coo()
-    #pab2v_sparse = pb.get_ac_vertex_array_sparse()
-    print("diff sparse - dense: ", np.sum(abs(pab2v_sparse.todense() - pab2v)))
+    pab2v = pb.get_ac_vertex_array(matformat="dense")
+    pab2v_sparse = pb.get_ac_vertex_array(matformat="sparse")
+    print("diff pab2v: sparse - dense: ", np.sum(abs(pab2v_sparse.todense() - pab2v)))
     s_chk = einsum('pab,p->ab', pab2v, mom0)
     print(abs(s_chk - s_ref).sum() / s_chk.size, abs(s_chk
           - s_ref).max())

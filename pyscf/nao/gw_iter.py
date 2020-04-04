@@ -41,6 +41,10 @@ class gw_iter(gw):
 
     self.gw_iter_tol = kw['gw_iter_tol'] if 'gw_iter_tol' in kw else 1e-4
     self.maxiter = kw['maxiter'] if 'maxiter' in kw else 1000
+    if 'vertex_matrix_format' in kw:
+        self.vertex_matrix_format = kw['vertex_matrix_format']
+    else:
+        self.vertex_matrix_format = "dense"
 
     self.limited_nbnd = kw['limited_nbnd'] if 'limited_nbnd' in kw else False
     if (self.limited_nbnd==True and min (self.vst) < 50 ):
@@ -118,7 +122,9 @@ class gw_iter(gw):
 
     #1-direct multiplication with np and einsum
     if algol=='simple':
-        v_pab = self.pb.get_ac_vertex_array()       #atom-centered product basis: V_{\mu}^{ab}
+        # atom-centered product basis: V_{\mu}^{ab}
+        v_pab = self.pb.get_ac_vertex_array(matformat=self.vertex_matrix_format,
+                                            dtype=self.dtype)
         for s in range(self.nspin):
             xna = self.mo_coeff[0,s,self.nn[s],:,0]      #(nstat,norbs)
             xmb = self.mo_coeff[0,s,:,:,0]               #(norbs,norbs)
@@ -129,7 +135,8 @@ class gw_iter(gw):
 
     #2-atom-centered product basis
     elif algol=='ac':
-        v_pab = self.pb.get_ac_vertex_array()       
+        v_pab = self.pb.get_ac_vertex_array(matformat=self.vertex_matrix_format,
+                                            dtype=self.dtype)
         #First step
         v_pab1= v_pab.reshape(self.nprod*self.norbs, self.norbs)  #2D shape
         for s in range(self.nspin):
@@ -148,15 +155,25 @@ class gw_iter(gw):
 
     #3-atom-centered product basis and BLAS
     elif algol=='blas':
-        from pyscf.nao.m_rf0_den import calc_XVX      #uses BLAS
+        
+        #uses BLAS
+        from pyscf.nao.m_rf0_den import calc_XVX
 
         t1 = timer()
-        v = self.pb.get_ac_vertex_array_sparse_coo().transpose(axes=(1, 0, 2))
-        #v = np.einsum('pab->apb', self.pb.get_ac_vertex_array())
+        if self.vertex_matrix_format == "sparse":
+            v = self.pb.get_ac_vertex_array(matformat=self.vertex_matrix_format,
+                                            dtype=self.dtype).transpose(axes=(1, 0, 2))
+        elif self.vertex_matrix_format == "dense":
+            v = np.einsum('pab->apb', self.pb.get_ac_vertex_array())
+        else:
+            raise ValueError("unknow matrix format {}".format(self.vertex_matrix_format))
         t2 = timer()
-        print("Get AC vertex timing: ", t2-t1)
-        print("Vpab: ", v.shape)
-        print("Vpab: ", v.nnz)
+
+        if self.verbosity>3:
+            print("Get AC vertex timing: ", t2-t1)
+            print("Vpab.shape: ", v.shape)
+            if self.vertex_matrix_format == "sparse":
+                print("Vpab.nnz: ", v.nnz)
 
         for s in range(self.nspin):
             #vx = np.dot(v, self.mo_coeff[0,s,self.nn[s],:,0].T)
@@ -413,7 +430,8 @@ class gw_iter(gw):
     ww = 1j*self.ww_ia
     rf0 = self.rf0(ww)
     #V_{\mu}^{ab}
-    v_pab = self.pb.get_ac_vertex_array()
+    v_pab = self.pb.get_ac_vertex_array(matformat=self.vertex_matrix_format,
+                                        dtype=self.dtype)
     for s in range(self.nspin):
       v_eff = np.zeros((len(self.nn[s]), self.nprod), dtype=self.dtype)
       v_eff_ref = np.zeros((len(self.nn[s]), self.nprod), dtype=self.dtype)
@@ -477,7 +495,8 @@ class gw_iter(gw):
     """
     
     from scipy.sparse.linalg import lgmres, LinearOperator
-    v_pab = self.pb.get_ac_vertex_array_sparse_coo()
+    v_pab = self.pb.get_ac_vertex_array(matformat=self.vertex_matrix_format,
+                                        dtype=self.dtype)
     sn2res = [np.zeros_like(n2w, dtype=self.dtype) for n2w in sn2w ]   
     k_c_opt = LinearOperator((self.nprod,self.nprod), matvec=self.gw_vext2veffmatvec, dtype=self.dtypeComplex)  
     for s,ww in enumerate(sn2w):
