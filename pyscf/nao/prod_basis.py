@@ -4,7 +4,6 @@ import gc
 import numpy as np
 from scipy.sparse import coo_matrix, lil_matrix
 from pyscf.nao.lsofcsr import lsofcsr_c
-from numpy import einsum, zeros, int64, sqrt, int32
 from ctypes import POINTER, c_double, c_int64, byref
 from pyscf.nao.m_libnao import libnao
 from timeit import default_timer as timer
@@ -128,7 +127,7 @@ class prod_basis:
             rc1 = sv.ao_log.sp2rcut[sv.atom2sp[ia1]]
             for ia2 in range(ia1 + 1, sv.natoms):
                 (rc2, dist) = (sv.ao_log.sp2rcut[sv.atom2sp[ia2]],
-                               sqrt(((sv.atom2coord[ia1]
+                               np.sqrt(((sv.atom2coord[ia1]
                                - sv.atom2coord[ia2]) ** 2).sum()))
                 if dist > rc1 + rc2:
                     continue
@@ -170,7 +169,7 @@ class prod_basis:
             for (a2, [sp2, ra2]) in enumerate(zip(sv.atom2sp[a1 + 1:],
                     sv.atom2coord[a1 + 1:])):
                 a2 += a1 + 1
-                (rc2, dist) = (aos.sp2rcut[sp2], sqrt(((ra1 - ra2)
+                (rc2, dist) = (aos.sp2rcut[sp2], np.sqrt(((ra1 - ra2)
                                ** 2).sum()))
                 if dist > rc1 + rc2:
                     continue
@@ -181,7 +180,7 @@ class prod_basis:
                 p2npac.append(sum([self.prod_log.sp2norbs[sv.atom2sp[ia]]
                               for ia in cc2atom]))
 
-        p2ndp = np.require(zeros(len(p2srncc), dtype=np.int64),
+        p2ndp = np.require(np.zeros(len(p2srncc), dtype=np.int64),
                            requirements='CW')
         p2srncc_cp = np.require(np.asarray(p2srncc), requirements='C')
         npairs = p2srncc_cp.shape[0]
@@ -219,7 +218,7 @@ class prod_basis:
                 nout = nout + ndp * sp2norbs[sp1] * sp2norbs[sp2] \
                     + npac * ndp
 
-            dout = np.require(zeros(nout), requirements='CW')
+            dout = np.require(np.zeros(nout), requirements='CW')
             if nao.verbosity > 3:
                 print(__name__,
                       '\t====>libnao.get_vrtx_cc_batch is calling')
@@ -233,17 +232,17 @@ class prod_basis:
                 if ndp < 1:
                     continue
                 (sp1, sp2, ncc) = (srncc[0], srncc[1], srncc[8])
-                icc2a = np.array(srncc[9:9 + ncc], dtype=int64)
+                icc2a = np.array(srncc[9:9 + ncc], dtype=np.int64)
                 nnn = np.array((ndp, sp2norbs[sp2], sp2norbs[sp1]),
-                               dtype=int64)
-                nnc = np.array([ndp, npac], dtype=int64)
+                               dtype=np.int64)
+                nnc = np.array([ndp, npac], dtype=np.int64)
                 s = f
                 f = s + np.prod(nnn)
                 vrtx = dout[s:f].reshape(nnn)
                 s = f
                 f = s + np.prod(nnc)
                 ccoe = dout[s:f].reshape(nnc)
-                icc2s = zeros(len(icc2a) + 1, dtype=int64)
+                icc2s = np.zeros(len(icc2a) + 1, dtype=np.int64)
                 for (icc, a) in enumerate(icc2a):
                     icc2s[icc + 1] = icc2s[icc] \
                         + self.prod_log.sp2norbs[sv.atom2sp[a]]
@@ -289,7 +288,7 @@ class prod_basis:
             self.prod_log = prod_log(ao_log=sv.ao_log, tol_loc=tol_loc, **kw)
 
         # global product Center (atom) -> start in case of atom-centered basis
-        self.c2s = zeros(sv.natm + 1, dtype=int64)
+        self.c2s = np.zeros(sv.natm + 1, dtype=np.int64)
         for (gc, sp) in enumerate(sv.atom2sp):
             self.c2s[gc + 1] = self.c2s[gc] + self.prod_log.sp2norbs[sp]
         return self
@@ -322,7 +321,7 @@ class prod_basis:
             + nat + 2 * na1 + tna + 4 * nsp + 2 * nmtp + nrtp + nmsp \
             + nvrt
 
-        dat = zeros(ndat)
+        dat = np.zeros(ndat)
 
         # Simple parameters
         i = 0
@@ -525,7 +524,7 @@ class prod_basis:
         npac = sum([self.prod_log.sp2norbs[sv.atom2sp[ia]] for ia in
                    icc2a])
         nout = c_int64(npmx ** 2 + npmx * npac + 10)
-        dout = np.require(zeros(nout.value), requirements='CW')
+        dout = np.require(np.zeros(nout.value), requirements='CW')
 
         libnao.vrtx_cc_apair(
             sp12.ctypes.data_as(POINTER(c_int64)),
@@ -549,7 +548,7 @@ class prod_basis:
         s = f
         f = s + np.prod(nnc)
         ccoe = dout[s:f].reshape(nnc)
-        icc2s = zeros(len(icc2a) + 1, dtype=np.int64)
+        icc2s = np.zeros(len(icc2a) + 1, dtype=np.int64)
         for (icc, a) in enumerate(icc2a):
             icc2s[icc + 1] = icc2s[icc] \
                 + self.prod_log.sp2norbs[sv.atom2sp[a]]
@@ -574,7 +573,7 @@ class prod_basis:
         """
 
         (nfdp, nfap) = (self.dpc2s[-1], self.c2s[-1])
-        da2cc = zeros((nfdp, nfap), dtype=dtype)
+        da2cc = np.zeros((nfdp, nfap), dtype=dtype)
         for (sd, fd, pt) in zip(self.dpc2s, self.dpc2s[1:], self.dpc2t):
             if pt == 1:
                 da2cc[sd:fd, sd:fd] = np.identity(fd - sd)
@@ -620,8 +619,9 @@ class prod_basis:
         nnz = self.get_da2cc_nnz()
         
         # Start to construct coo matrix
-        (irow, icol, data) = (zeros(nnz, dtype=int), zeros(nnz,
-                              dtype=int), zeros(nnz, dtype=dtype))
+        (irow, icol, data) = (np.zeros(nnz, dtype=np.int32),
+                              np.zeros(nnz, dtype=np.int32),
+                              np.zeros(nnz, dtype=dtype))
 
         inz = 0
         for (atom, [sd, fd, pt]) in enumerate(zip(self.dpc2s,
@@ -674,7 +674,7 @@ class prod_basis:
         atom2so = self.sv.atom2s
         nfap = self.c2s[-1]
         n = self.sv.atom2s[-1]
-        pab2v = np.require(zeros((nfap, n, n), dtype=dtype),
+        pab2v = np.require(np.zeros((nfap, n, n), dtype=dtype),
                            requirements='CW')
         for (atom, [sd, fd, pt, spp]) in enumerate(zip(self.dpc2s,
                 self.dpc2s[1:], self.dpc2t, self.dpc2sp)):
@@ -688,7 +688,7 @@ class prod_basis:
             if pt != 2:
                 continue
             inf = self.bp2info[spp]
-            lab = einsum('dl,dab->lab', inf.cc, inf.vrtx)
+            lab = np.einsum('dl,dab->lab', inf.cc, inf.vrtx)
             (a, b) = inf.atoms
             (sa, fa, sb, fb) = (atom2so[a], atom2so[a + 1], atom2so[b],
                                 atom2so[b + 1])
@@ -696,7 +696,7 @@ class prod_basis:
                 pab2v[self.c2s[c]:self.c2s[c + 1], sa:fa, sb:fb] = \
                     lab[ls:lf, :, :]
                 pab2v[self.c2s[c]:self.c2s[c + 1], sb:fb, sa:fa] = \
-                    einsum('pab->pba', lab[ls:lf, :, :])
+                    np.einsum('pab->pba', lab[ls:lf, :, :])
         return pab2v
 
     def get_ac_vertex_array_sparse_coo(self, dtype=np.float64):
@@ -778,13 +778,13 @@ class prod_basis:
             if pt != 2:
                 continue
             inf = self.bp2info[spp]
-            lab = einsum('dl,dab->lab', inf.cc, inf.vrtx)
+            lab = np.einsum('dl,dab->lab', inf.cc, inf.vrtx)
             (a, b) = inf.atoms
             (sa, fa, sb, fb) = (atom2so[a], atom2so[a + 1], atom2so[b],
                                 atom2so[b + 1])
             for (c, ls, lf) in zip(inf.cc2a, inf.cc2s, inf.cc2s[1:]):
 
-                lab_T = einsum('pab->pba', lab[ls:lf, :, :])
+                lab_T = np.einsum('pab->pba', lab[ls:lf, :, :])
                 ilab2 = 0
                 for ifap, ilab in zip(range(self.c2s[c], self.c2s[c + 1]),
                                       range(ls, lf)):
@@ -819,8 +819,7 @@ class prod_basis:
         atom2so = self.sv.atom2s
         nfdp = self.dpc2s[-1]
         n = self.sv.atom2s[-1]
-        pab2v = np.require(zeros((nfdp, n, n), dtype=dtype),
-                           requirements='CW')
+        pab2v = np.require(np.zeros((nfdp, n, n), dtype=dtype), requirements='CW')
         for (atom, [sd, fd, pt, spp]) in enumerate(zip(self.dpc2s,
                 self.dpc2s[1:], self.dpc2t, self.dpc2sp)):
             if pt != 1:
@@ -837,7 +836,7 @@ class prod_basis:
             (sa, fa, sb, fb) = (atom2so[a], atom2so[a + 1], atom2so[b],
                                 atom2so[b + 1])
             pab2v[sd:fd, sa:fa, sb:fb] = inf.vrtx
-            pab2v[sd:fd, sb:fb, sa:fa] = einsum('pab->pba', inf.vrtx)
+            pab2v[sd:fd, sb:fb, sa:fa] = np.einsum('pab->pba', inf.vrtx)
         return pab2v
 
     def get_dp_vertex_nnz(self):
@@ -864,9 +863,10 @@ class prod_basis:
         """
 
         nnz = self.get_dp_vertex_nnz()
-        (i1, i2, i3, data) = (zeros(nnz, dtype=int), zeros(nnz,
-                              dtype=int), zeros(nnz, dtype=int),
-                              zeros(nnz, dtype=dtype))
+        (i1, i2, i3, data) = (np.zeros(nnz, dtype=np.int32),
+                              np.zeros(nnz, dtype=np.int32),
+                              np.zeros(nnz, dtype=np.int32),
+                              np.zeros(nnz, dtype=dtype))
         (atom2s, dpc2s, nfdp, n) = (self.sv.atom2s, self.dpc2s,
                                     self.dpc2s[-1], self.sv.atom2s[-1])
 
@@ -910,11 +910,14 @@ class prod_basis:
         """
 
         nnz = self.get_dp_vertex_nnz()
-        (i1, i2, i3, data) = (zeros(nnz, dtype=int), zeros(nnz,
-                              dtype=int), zeros(nnz, dtype=int),
-                              zeros(nnz, dtype=dtype))
+        (i1, i2, i3, data) = (np.zeros(nnz, dtype=np.int32),
+                              np.zeros(nnz, dtype=np.int32),
+                              np.zeros(nnz, dtype=np.int32),
+                              np.zeros(nnz, dtype=dtype))
+
+        # local "aliases"
         (a2s, n, nfdp, lv) = (self.sv.atom2s, self.sv.atom2s[-1],
-                              self.dpc2s[-1], self.prod_log.sp2vertex)  # local "aliases"
+                              self.dpc2s[-1], self.prod_log.sp2vertex)
         inz = 0
         for (atom, [sd, fd, pt, spp]) in enumerate(zip(self.dpc2s,
                 self.dpc2s[1:], self.dpc2t, self.dpc2sp)):
@@ -959,8 +962,9 @@ class prod_basis:
         nnz = self.get_dp_vertex_nnz()
         
         # Start to construct coo matrix
-        (irow, icol, data) = (zeros(nnz, dtype=int), zeros(nnz,
-                              dtype=int), zeros(nnz, dtype=dtype))
+        (irow, icol, data) = (np.zeros(nnz, dtype=np.int32),
+                              np.zeros(nnz, dtype=np.int32),
+                              np.zeros(nnz, dtype=dtype))
 
         # self.dpc2s, self.dpc2t, self.dpc2sp: product Center -> list of the 
         # size of the basis set in this center,of center's types,of product species
@@ -1012,8 +1016,10 @@ class prod_basis:
         import numpy as np
         from scipy.sparse import csr_matrix, coo_matrix
         nnz = self.get_dp_vertex_nnz()
-        (irow, icol, data) = (np.zeros(nnz, dtype=int), np.zeros(nnz,
-                              dtype=int), np.zeros(nnz, dtype=dtype))
+        (irow, icol, data) = (np.zeros(nnz, dtype=np.int32),
+                              np.zeros(nnz, dtype=np.int32),
+                              np.zeros(nnz, dtype=dtype))
+
         (atom2s, dpc2s, nfdp, n) = (self.sv.atom2s, self.dpc2s,
                                     self.dpc2s[-1], self.sv.atom2s[-1])
 
@@ -1058,8 +1064,10 @@ class prod_basis:
         """
 
         nnz = self.get_dp_vertex_nnz()
-        (irow, icol, data) = (zeros(nnz, dtype=int), zeros(nnz,
-                              dtype=int), zeros(nnz, dtype=dtype))  # Start to construct coo matrix
+        # Start to construct coo matrix
+        (irow, icol, data) = (np.zeros(nnz, dtype=np.int32),
+                              np.zeros(nnz, dtype=np.int32),
+                              np.zeros(nnz, dtype=dtype))
 
         atom2so = self.sv.atom2s
         nfdp = self.dpc2s[-1]
@@ -1130,7 +1138,7 @@ class prod_basis:
 
         # product Center -> Start index of a product function in a global
         # counting for this vertex
-        c2s = zeros(ndpc + 1, np.int64)
+        c2s = np.zeros(ndpc + 1, dtype=np.int64)
         for c in range(ndpc):
             c2s[c + 1] = c2s[c] + c2n[c]
         
@@ -1144,11 +1152,11 @@ class prod_basis:
 
         (sp2mom0, sp2mom1) = self.prod_log.comp_moments()
         n = self.c2s[-1]
-        mom0 = np.require(zeros(n, dtype=dtype), requirements='CW')
-        mom1 = np.require(zeros((n, 3), dtype=dtype), requirements='CW')
+        mom0 = np.require(np.zeros(n, dtype=dtype), requirements='CW')
+        mom1 = np.require(np.zeros((n, 3), dtype=dtype), requirements='CW')
         for (a, [sp, coord, s, f]) in enumerate(zip(self.sv.atom2sp,
                 self.sv.atom2coord, self.c2s, self.c2s[1:])):
-            (mom0[s:f], mom1[s:f, :]) = (sp2mom0[sp], einsum('j,k->jk',
+            (mom0[s:f], mom1[s:f, :]) = (sp2mom0[sp], np.einsum('j,k->jk',
                     sp2mom0[sp], coord) + sp2mom1[sp])
         return (mom0, mom1)
 
@@ -1313,13 +1321,13 @@ def test():
     pab2v = pb.get_ac_vertex_array(matformat="dense")
     pab2v_sparse = pb.get_ac_vertex_array(matformat="sparse")
     print("diff pab2v: sparse - dense: ", np.sum(abs(pab2v_sparse.todense() - pab2v)))
-    s_chk = einsum('pab,p->ab', pab2v, mom0)
+    s_chk = np.einsum('pab,p->ab', pab2v, mom0)
     print(abs(s_chk - s_ref).sum() / s_chk.size, abs(s_chk
           - s_ref).max())
-#
-#
-#
 
+#
+#
+#
 if __name__ == '__main__':
     test()
 
