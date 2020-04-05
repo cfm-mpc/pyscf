@@ -128,7 +128,7 @@ class gw_iter(gw):
     #1-direct multiplication with np and einsum
     if algol=='simple':
         # atom-centered product basis: V_{\mu}^{ab}
-        v_pab = self.pb.get_ac_vertex_array(mat_format=self.vertex_matrix_format,
+        v_pab = self.pb.get_ac_vertex_array(matformat=self.vertex_matrix_format,
                                             dtype=self.dtype)
         for s in range(self.nspin):
             xna = self.mo_coeff[0,s,self.nn[s],:,0]      #(nstat,norbs)
@@ -140,7 +140,7 @@ class gw_iter(gw):
 
     #2-atom-centered product basis
     elif algol=='ac':
-        v_pab = self.pb.get_ac_vertex_array(mat_format=self.vertex_matrix_format,
+        v_pab = self.pb.get_ac_vertex_array(matformat=self.vertex_matrix_format,
                                             dtype=self.dtype)
         #First step
         v_pab1= v_pab.reshape(self.nprod*self.norbs, self.norbs)  #2D shape
@@ -457,7 +457,7 @@ class gw_iter(gw):
     rf0 = self.rf0(ww)
     #V_{\mu}^{ab}
     if self.vpab is None:
-        v_pab = self.pb.get_ac_vertex_array(mat_format=self.vertex_matrix_format,
+        v_pab = self.pb.get_ac_vertex_array(matformat=self.vertex_matrix_format,
                                             dtype=self.dtype)
     else:
         v_pab = self.vpab
@@ -526,7 +526,7 @@ class gw_iter(gw):
     
     from scipy.sparse.linalg import lgmres, LinearOperator
     if self.vpab is None:
-        v_pab = self.pb.get_ac_vertex_array(mat_format=self.vertex_matrix_format,
+        v_pab = self.pb.get_ac_vertex_array(matformat=self.vertex_matrix_format,
                                             dtype=self.dtype)
     else:
         v_pab = self.vpab
