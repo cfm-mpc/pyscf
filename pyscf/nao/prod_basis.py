@@ -855,8 +855,7 @@ class prod_basis:
                 raise RuntimeError('pt?')
         return nnz
 
-    def get_dp_vertex_doubly_sparse(self, dtype=np.float64, sparseformat=lsofcsr_c,
-                                    axis=0):
+    def get_dp_vertex_sparse_data_coo(self, dtype=np.float64):
         """
         Returns the product vertex coefficients for dominant products as a
         one-dimensional array of sparse matrices
@@ -899,6 +898,37 @@ class prod_basis:
              + size]) = (dd, bb, aa)
             data[inz:inz + size] = inf.vrtx.reshape(size)
             inz += size
+
+        return i1, i2, i3, data
+
+    def get_dp_vertex_sparse_3Dcoo(self, dtype=np.float64):
+
+        import sparse
+        
+        nnz = self.get_dp_vertex_nnz()
+        nfdp = self.dpc2s[-1]
+        n = self.sv.atom2s[-1]
+
+        coords = np.zeros((3, nnz), dtype=np.int32)
+
+        coords[0, :], coords[1, :], coords[2, :], data = \
+                self.get_dp_vertex_sparse_data_coo(dtype=dtype)
+
+        print(coords.flags)
+        print(data.flags)
+        return sparse.COO(coords, data, shape=(nfdp, n, n))
+
+
+    def get_dp_vertex_doubly_sparse(self, dtype=np.float64, sparseformat=lsofcsr_c,
+                                    axis=0):
+        """
+        Returns the product vertex coefficients for dominant products as a
+        one-dimensional array of sparse matrices
+        """
+
+        nfdp = self.dpc2s[-1]
+        n = self.sv.atom2s[-1]
+        i1, i2, i3, data = self.get_dp_vertex_sparse_data_coo(dtype=dtype)
         return sparseformat((data, (i1, i2, i3)), dtype=dtype,
                             shape=(nfdp, n, n), axis=axis)
 

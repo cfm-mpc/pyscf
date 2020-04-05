@@ -43,6 +43,11 @@ class gw_iter(gw):
     self.maxiter = kw['maxiter'] if 'maxiter' in kw else 1000
     self.gw_xvx_algo = kw['gw_xvx_algo'] if 'gw_xvx_algo' in kw else "blas"
 
+    if self.gw_xvx_algo == "ac_sparse":
+        self.vertex_matrix_format = "sparse"
+    else:
+        self.vertex_matrix_format = "dense"
+
     self.limited_nbnd = kw['limited_nbnd'] if 'limited_nbnd' in kw else False
     if (self.limited_nbnd==True and min (self.vst) < 50 ):
         print('Too few virtual states, limited_nbnd ignored!')
@@ -52,6 +57,9 @@ class gw_iter(gw):
     self.h0_vh_x_expval = self.get_h0_vh_x_expval()
     self.ncall_chi0_mv_ite = 0
     self.ncall_chi0_mv_total = 0
+
+    # Store the ac product basis if necessary (sparse)
+    self.vpab = None
 
   def si_c2(self,ww):
     """
@@ -120,7 +128,7 @@ class gw_iter(gw):
     #1-direct multiplication with np and einsum
     if algol=='simple':
         # atom-centered product basis: V_{\mu}^{ab}
-        v_pab = self.pb.get_ac_vertex_array(matformat=self.vertex_matrix_format,
+        v_pab = self.pb.get_ac_vertex_array(mat_format=self.vertex_matrix_format,
                                             dtype=self.dtype)
         for s in range(self.nspin):
             xna = self.mo_coeff[0,s,self.nn[s],:,0]      #(nstat,norbs)
@@ -132,7 +140,7 @@ class gw_iter(gw):
 
     #2-atom-centered product basis
     elif algol=='ac':
-        v_pab = self.pb.get_ac_vertex_array(matformat=self.vertex_matrix_format,
+        v_pab = self.pb.get_ac_vertex_array(mat_format=self.vertex_matrix_format,
                                             dtype=self.dtype)
         #First step
         v_pab1= v_pab.reshape(self.nprod*self.norbs, self.norbs)  #2D shape
@@ -176,14 +184,16 @@ class gw_iter(gw):
             xvx0 = calc_XVX(self.mo_coeff[0,s,:,:,0], vx)
             xvx.append(xvx0.T)          
 
+    # 4-sparse-atom-centered product basis and BLAS
     elif algol=='ac_sparse':
         
-        #uses BLAS
+        #uses BLAS with sparse ac vertex array
         from pyscf.nao.m_rf0_den import calc_XVX
 
         t1 = timer()
-        v = self.pb.get_ac_vertex_array(matformat=self.vertex_matrix_format,
-                                        dtype=self.dtype).transpose(axes=(1, 0, 2))
+        self.vpab = self.pb.get_ac_vertex_array(matformat="sparse",
+                                        dtype=self.dtype)
+        v = self.vpab.transpose(axes=(1, 0, 2))
         t2 = timer()
 
         if self.verbosity>3:
@@ -203,7 +213,7 @@ class gw_iter(gw):
             xvx0 = calc_XVX(self.mo_coeff[0,s,:,:,0], vx)
             xvx.append(xvx0.T)          
 
-    #4-dominant product basis
+    # 4-dominant product basis
     elif algol=='dp':
 
         size = self.cc_da.shape[0]
@@ -227,8 +237,7 @@ class gw_iter(gw):
             xvx2 = np.dot(xvx2,c)
             xvx.append(xvx2)
 
-
-    #5-dominant product basis in COOrdinate-format instead of reshape
+    # 5-dominant product basis in ndCOOrdinate-format instead of reshape
     elif algol=='dp_coo':
         size = self.cc_da.shape[0]
         v_pd  = self.pb.get_dp_vertex_array() 
@@ -447,8 +456,12 @@ class gw_iter(gw):
     ww = 1j*self.ww_ia
     rf0 = self.rf0(ww)
     #V_{\mu}^{ab}
-    v_pab = self.pb.get_ac_vertex_array(matformat=self.vertex_matrix_format,
-                                        dtype=self.dtype)
+    if self.vpab is None:
+        v_pab = self.pb.get_ac_vertex_array(mat_format=self.vertex_matrix_format,
+                                            dtype=self.dtype)
+    else:
+        v_pab = self.vpab
+
     for s in range(self.nspin):
       v_eff = np.zeros((len(self.nn[s]), self.nprod), dtype=self.dtype)
       v_eff_ref = np.zeros((len(self.nn[s]), self.nprod), dtype=self.dtype)
@@ -512,28 +525,39 @@ class gw_iter(gw):
     """
     
     from scipy.sparse.linalg import lgmres, LinearOperator
-    v_pab = self.pb.get_ac_vertex_array(matformat=self.vertex_matrix_format,
-                                        dtype=self.dtype)
+    if self.vpab is None:
+        v_pab = self.pb.get_ac_vertex_array(mat_format=self.vertex_matrix_format,
+                                            dtype=self.dtype)
+    else:
+        v_pab = self.vpab
+
     sn2res = [np.zeros_like(n2w, dtype=self.dtype) for n2w in sn2w ]   
-    k_c_opt = LinearOperator((self.nprod,self.nprod), matvec=self.gw_vext2veffmatvec, dtype=self.dtypeComplex)  
+    k_c_opt = LinearOperator((self.nprod,self.nprod),
+                             matvec=self.gw_vext2veffmatvec,
+                             dtype=self.dtypeComplex)
+
     for s,ww in enumerate(sn2w):
-      x = self.mo_coeff[0,s,:,:,0]
-      for nl,(n,w) in enumerate(zip(self.nn[s],ww)):
-        lsos = self.lsofs_inside_contour(self.ksn2e[0,s,:],w,self.dw_excl)
-        zww = array([pole[0] for pole in lsos])
-        stw = array([pole[1] for pole in lsos])
-        if self.verbosity>3: print('states located inside contour: #',stw)
-        xv = v_pab.dot(x[n])
-        for pole, z_real in zip(lsos, zww):
-          self.comega_current = z_real
-          xvx = np.dot(xv, x[pole[1]])
-          a = np.dot(self.kernel_sq, xvx)
-          b = self.chi0_mv(a, self.comega_current)
-          a = np.dot(self.kernel_sq, b)
-          si_xvx, exitCode = lgmres(k_c_opt, a, atol=self.gw_iter_tol, maxiter=self.maxiter)
-          if exitCode != 0: print("LGMRES has not achieved convergence: exitCode = {}".format(exitCode))
-          contr = np.dot(xvx, si_xvx)
-          sn2res[s][nl] += pole[2]*contr.real
+      
+        x = self.mo_coeff[0,s,:,:,0]
+        for nl,(n,w) in enumerate(zip(self.nn[s],ww)):
+            lsos = self.lsofs_inside_contour(self.ksn2e[0,s,:],w,self.dw_excl)
+            zww = array([pole[0] for pole in lsos])
+            stw = array([pole[1] for pole in lsos])
+            if self.verbosity > 3:
+                print('states located inside contour: #',stw)
+            xv = v_pab.dot(x[n])
+            for pole, z_real in zip(lsos, zww):
+                self.comega_current = z_real
+                xvx = np.dot(xv, x[pole[1]])
+                a = np.dot(self.kernel_sq, xvx)
+                b = self.chi0_mv(a, self.comega_current)
+                a = np.dot(self.kernel_sq, b)
+                si_xvx, exitCode = lgmres(k_c_opt, a, atol=self.gw_iter_tol,
+                                          maxiter=self.maxiter)
+                if exitCode != 0:
+                    print("LGMRES has not achieved convergence: exitCode = {}".format(exitCode))
+                contr = np.dot(xvx, si_xvx)
+                sn2res[s][nl] += pole[2]*contr.real
     
     return sn2res
 
