@@ -41,7 +41,9 @@ class KnowValues(unittest.TestCase):
     dp2c = pb.get_da2cc_den()
     pab2v1 = einsum('dp,dab->pab', dp2c, dab2v)
     pab2v2 = pb.get_ac_vertex_array()
+    pab2v2_sparse = pb.get_ac_vertex_array(matformat="sparse")
     self.assertTrue(allclose(pab2v1,pab2v2))
+    self.assertTrue(allclose(pab2v1,pab2v2_sparse.todense()))
 
   def test_cc_coo(self):
     """ This is to test the gathering of conversion coefficients into a sparse format """

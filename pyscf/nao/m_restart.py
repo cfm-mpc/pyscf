@@ -9,8 +9,8 @@ import numpy as np
 def read_rst_h5py (value, filename=None):
     import h5py ,os
     if filename is None: 
-        path = os.getcwd()
-        filename =find('*.hdf5', path)
+        msg = "No file to open"
+        return None, msg
   
     try:
         fl = h5py.File(filename, 'r')

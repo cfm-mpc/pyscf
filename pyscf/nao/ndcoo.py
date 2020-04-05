@@ -1,6 +1,6 @@
 from __future__ import print_function, division
 import numpy as np
-from scipy.sparse import coo_matrix
+from scipy.sparse import coo_matrix, lil_matrix
 from timeit import default_timer as timer
 
 #
