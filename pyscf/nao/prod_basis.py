@@ -195,7 +195,7 @@ class prod_basis:
             if nao.verbosity > 0:
 
                 t2 = timer()
-                mess = "{}\t ====> Time for call vrtx_cc_batch:".format(__name__) +\
+                mess = "{}\t====> Time for call vrtx_cc_batch:".format(__name__) +\
                         "{:.2f} sec, npairs: {}".format(t2-t1, npairs)
                 print(mess)
                 t1 = timer()

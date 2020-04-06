@@ -53,13 +53,6 @@ class gw(scf):
     else:
         raise RuntimeError('nspin>2?')
 
-    if self.verbosity>0:
-        mess = """====> Number of:
-    * occupied states = {},
-    * states up to fermi level= {},
-    * nspin = {}, 
-    * magnetization = {}""".format(nocc_0t,self.nfermi,self.nspin,self.spin)
-        print(__name__, mess)
 
     if 'nocc' in kw:
       s2nocc = [kw['nocc']] if type(kw['nocc'])==int else kw['nocc']
@@ -73,8 +66,6 @@ class gw(scf):
     else :
       self.nvrt = array([min(6,j) for j in self.norbs-nocc_0t])
 
-    if self.verbosity>0: print(__name__,'\t\t====> Number of ocupied states are gonna correct (nocc) = {}, Number of virtual states are gonna correct (nvrt) = {}'.format(self.nocc, self.nvrt))
-
     #self.start_st,self.finish_st = self.nocc_0t-self.nocc, self.nocc_0t+self.nvrt
     frozen_core = kw['frozen_core'] if 'frozen_core' in kw else self.frozen_core
     if frozen_core is not None: 
@@ -83,8 +74,7 @@ class gw(scf):
     else: 
         self.start_st = self.nocc_0t-self.nocc
         self.finish_st = self.nocc_0t+self.nvrt
-    if self.verbosity>0:
-      print(__name__,'\t\t====> Indices of states to be corrected start from {} to {} \n'.format(self.start_st,self.finish_st))
+
     self.nn = [range(self.start_st[s], self.finish_st[s]) for s in range(self.nspin)] # list of states
     self.vst= [self.norbs - self.nfermi[s] for s in range(self.nspin)]   
 
@@ -94,8 +84,6 @@ class gw(scf):
     else :
       self.nocc_conv = self.nocc
 
-    if self.verbosity>0:
-      print(__name__, __LINE__())
     if 'nvrt_conv' in kw:
       s2nvrt_conv = [kw['nvrt_conv']] if type(kw['nvrt_conv'])==int else kw['nvrt_conv']
       self.nvrt_conv = array([min(i,j) for i,j in zip(s2nvrt_conv,self.norbs-nocc_0t)])
@@ -134,6 +122,17 @@ class gw(scf):
     self.snmw2sf_ncalls = 0
     print(__name__, __LINE__())
     
+    if self.verbosity>0:
+        mess = """====> Number of:
+    * occupied states = {},
+    * states up to fermi level= {},
+    * vitual states = {},
+    * noribial = {},
+    * nspin = {}, 
+    * magnetization = {},
+    * states to be corrected from {} to {}.""".format(nocc_0t, self.nfermi, self.vst, self.norbs, self.nspin, self.spin, self.start_st, self.finish_st)
+        print(__name__, mess)
+
   def get_h0_vh_x_expval(self):
     """
     This calculates the expectation value of Hartree-Fock Hamiltonian, when:
@@ -268,7 +267,7 @@ class gw(scf):
     """
 
     if not hasattr(self, 'snmw2sf'):
-      if self.restart is True:
+      if self.restart:
         from pyscf.nao.m_restart import read_rst_h5py
         self.snmw2sf, msg = read_rst_h5py(value='screened_interactions',filename= 'RESTART.hdf5')
         print(msg)
@@ -454,7 +453,7 @@ class gw(scf):
       print(__name__,'\t\t====> Performed xc_code: {}\n '.format(self.xc_code))
       print('\nConverged GW-corrected eigenvalues:\n',self.mo_energy_gw*HARTREE2EV)
 
-    if (self.write_R==True):    self.write_data()
+    if self.write_R:    self.write_data()
     
     return self.etot_gw()
         

@@ -49,7 +49,7 @@ class gw_iter(gw):
         self.vertex_matrix_format = "dense"
 
     self.limited_nbnd = kw['limited_nbnd'] if 'limited_nbnd' in kw else False
-    if (self.limited_nbnd==True and min (self.vst) < 50 ):
+    if (self.limited_nbnd and min (self.vst) < 50 ):
         print('Too few virtual states, limited_nbnd ignored!')
         self.limited_nbnd= False
 
@@ -329,7 +329,7 @@ class gw_iter(gw):
         sf_aux = np.zeros((len(self.nn[s]), self.norbs, self.nprod), dtype=self.dtypeComplex)
         inm = np.zeros((len(self.nn[s]), self.norbs, len(ww)), dtype=self.dtypeComplex)
         dup = self.dupl_E(s)
-        if self.pass_dupl is True: print('duplicate states:', dup)
+        if self.pass_dupl : print('duplicate states:', dup)
         # w is complex plane
         for iw, w in enumerate(ww):
             self.comega_current = w
@@ -341,7 +341,7 @@ class gw_iter(gw):
             for n in range(len(self.nn[s])):    
                 for m in range(self.norbs):
                     
-                    if (self.pass_dupl==True and m in dup ):
+                    if (self.pass_dupl and m in dup ):
                         #copies sf for m whose mf's energy is almost similar, how about n??
                         sf_aux[n,m,:]= copy.deepcopy(sf_aux[n,m-1,:])
                         if self.verbosity>3: print('m#{} copied_duplicate, pass_dupl'.format(m))
@@ -357,7 +357,7 @@ class gw_iter(gw):
                         a = self.kernel_sq.dot(b)
 
                         #considers only part v\chi_{0}v XVX for virtual states above nbnd
-                        if ( self.limited_nbnd==True and m >= nbnd[s]):
+                        if ( self.limited_nbnd and m >= nbnd[s]):
                             sf_aux[n,m,:] = a
                             if self.verbosity>3: print('m#{} LGMRS ignored, limited_nbnd'.format(m))
                            
@@ -501,14 +501,14 @@ class gw_iter(gw):
     """
     if not hasattr(self, 'snmw2sf'):
 
-        if self.restart is True: 
+        if self.restart: 
             from pyscf.nao.m_restart import read_rst_h5py
             self.snmw2sf, msg = read_rst_h5py(value='screened_interactions',
                                               filename= 'RESTART.hdf5')
             print(msg)  
 
         else:
-            if self.limited_nbnd is True:
+            if self.limited_nbnd:
                 nbnd = [int(self.nfermi[s] + self.vst[s]*0.7) for s in range(self.nspin)] #considers 70% of virtual states
                 self.snmw2sf = self.get_snmw2sf_iter(nbnd)
                 print('Limited number of virtual states are considered in full matrix of W_c')
@@ -659,7 +659,7 @@ class gw_iter(gw):
       self.mo_energy_gw[0,s,:] = np.sort(self.mo_energy_gw[0,s,:])
       for n,m in enumerate(argsrt): self.mo_coeff_gw[0,s,n] = self.mo_coeff[0,s,m]
  
-    if (self.write_R==True):    self.write_data()
+    if self.write_R:    self.write_data()
 
     self.xc_code = 'GW'
     if self.verbosity>3:
@@ -681,18 +681,25 @@ if __name__=='__main__':
     mf = scf.UHF(mol)
     mf.kernel()
 
-    gw = gw_iter(mf=mf, gto=mol, verbosity=1, niter_max_ev=1, nff_ia=5, nvrt=1, nocc=1, use_initial_guess_ite_solver=False, limited_nbnd=False, pass_dupl=False,)
+    gw = gw_iter(mf=mf, gto=mol, verbosity=1, niter_max_ev=1, nff_ia=5, nvrt=1, nocc=1, 
+                    use_initial_guess_ite_solver=False, 
+                    limited_nbnd=False, pass_dupl=False, write_R = False)
 
     gw_ref = gw.get_snmw2sf()
     gw_it = gw.get_snmw2sf_iter()
+    #if limited_nbnd: 
+    #nbnd = [int(gw.nfermi[s] + gw.vst[s]*0.7) for s in range(gw.nspin)]
+    #gw_it = gw.get_snmw2sf_iter(nbnd)
 
-    print('Comparison between matrix element of W obtained from gw_iter and gw classes: ', np.allclose(gw_it, gw_ref, atol= gw.gw_iter_tol)) 
+    print('Comparison between matrix element of W obtained from gw_iter and gw classes: ', 
+            np.allclose(gw_it, gw_ref, atol= gw.gw_iter_tol)) 
     print([abs(gw_it[s]-gw_ref[s]).sum() for s in range(gw.nspin)])  
 
     sn2eval_gw = [np.copy(gw.ksn2e[0,s,nn]) for s,nn in enumerate(gw.nn) ]
     sn2r_it  = gw.gw_corr_res_iter(sn2eval_gw)
     sn2r_ref = gw.gw_corr_res(sn2eval_gw)
-    print('Comparison between energies in residue part of the GW correction obtained from gw_iter and gw classes: ', np.allclose(sn2r_it, sn2r_ref, atol= gw.gw_iter_tol))
+    print('Comparison between energies in residue part obtained from gw_iter and gw classes: ',
+            np.allclose(sn2r_it, sn2r_ref, atol= gw.gw_iter_tol))
 
     #gw.kernel_gw_iter()
     #gw.report()

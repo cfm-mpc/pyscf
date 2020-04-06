@@ -72,7 +72,7 @@ def kmat_den(mf, dm=None, algo=None, **kw):
 
         dab2v = pb.get_dp_vertex_array()
         da2cc = pb.get_da2cc_den()
-        dq2v  = einsum('dp,pq->dq', da2cc, hk)
+        dq2v  = np.einsum('dp,pq->dq', da2cc, hk)
         kmat  = np.zeros_like(dm)
         for d in range(n):
             pc2 = np.einsum('dq,da->qa', dq2v, dab2v[:,:,d])
@@ -132,7 +132,7 @@ def kmat_den(mf, dm=None, algo=None, **kw):
             for s in range(mf.nspin):
                 for mu,a_ap2v in enumerate(dab2v):
                     cc = da2cc[mu].toarray().reshape(nnp)
-                    q2v = dot( cc, hk )
+                    q2v = np.dot( cc, hk )
                     a_bp = sparse.csr_matrix(a_ap2v * dm[s])
                     for nu,bp_b2v in enumerate(dab2v):
                         q2cc = da2cc[nu].toarray().reshape(nnp)
@@ -144,7 +144,7 @@ def kmat_den(mf, dm=None, algo=None, **kw):
         elif len(dm.shape)==2: # if spin index is absent
             for mu,a_ap2v in enumerate(dab2v):
                 cc = da2cc[mu].toarray().reshape(nnp)
-                q2v = dot( cc, hk )
+                q2v = np.dot( cc, hk )
                 a_bp = sparse.csr_matrix(a_ap2v * dm)
 
                 if gen_spy_png:
@@ -257,6 +257,30 @@ def sm0_sum(pb, mf, hk, dm):
         tt[7] = timer()
         ttt += tt[1:8]-tt[0:7]
         
-    print(__name__, ttt)
+    if mf.verbosity>1: 
+      print(__name__,'\t\t====> Time consumed on Fock matrix', [round(t, 3) for t in ttt])
+
     return kmat
     #return np.require(np.asarray(kmat), dtype=kmat.dtype,  requirements=['A', 'O', 'W', 'C'])
+
+
+if __name__=='__main__':
+    from pyscf import gto, scf
+    from pyscf.nao import nao, scf as scf_nao 
+
+    mol = gto.M(atom='''O 0.0, 0.0, 0.622978 ; O 0.0, 0.0, -0.622978''', basis='ccpvtz',spin=2)
+    mf = scf.UHF(mol)
+    mf.kernel()
+
+    nao_hf = scf_nao (mf=mf, gto=mol, verbosity=1)
+    dm = nao_hf.make_rdm1()
+    algori =['fci', 'ac_vertex_fm', 'dp_vertex_fm', 'dp_vertex_loops_fm', 'dp_vertex_loops_sm','sm0_prd', 'sm0_sum']
+    fci = kmat_den(nao_hf, dm=dm, algo='fci')
+
+    for k in range (1,len(algori)):
+        kmat  = np.zeros_like(dm)
+        t1 = timer()
+        kmat = kmat_den(nao_hf, dm=dm, algo=algori[k])
+        t2 = timer()        
+        print('Comparison between {} and reference:\t{},\ttime {:.5f} sec\n'.format(
+                algori[k], np.allclose(fci, kmat, atol=1e-06), t2-t1))
