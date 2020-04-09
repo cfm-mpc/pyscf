@@ -90,8 +90,12 @@ def report_mfx(self, dm1=None):
     exp_co = np.zeros((self.nspin, self.norbs))
     exp_x = np.zeros((self.nspin, self.norbs))
     exp_f = np.zeros((self.nspin, self.norbs))
+
+    if not hasattr(self, 'kmat'):
+        self.kmat = self.get_k()
+
     if self.nspin==1:
-        x = -0.5* self.get_k()
+        x = -0.5* self.kmat
         mat_h = np.dot(self.mo_coeff[0,0,:,:,0], H)   
         exp_h = np.einsum('nb,nb->n', mat_h, self.mo_coeff[0,0,:,:,0])
         mat_co = np.dot(self.mo_coeff[0,0,:,:,0], co)  
@@ -109,7 +113,7 @@ def report_mfx(self, dm1=None):
         EX = 0.5*(x*dm1).sum()
 
     elif self.nspin==2:
-        x = -self.get_k()
+        x = -self.kmat
         cou = co[0]+co[1]
         Vha = 0.5*(cou*dm1).sum()
         for s in range(self.nspin):
@@ -163,8 +167,11 @@ def sigma_xc(self):
     mat1 is product of this operator and molecular coefficients and it will be diagonalized in expval by einsum
     Sigma_c = E_GW - E_HF
     """
+    if not hasattr(self, 'kmat'):
+        self.kmat = self.get_k()
+
     if self.nspin==1:
-      mat = -0.5*self.get_k()
+      mat = -0.5*self.kmat
       mat1 = np.dot(self.mo_coeff[0,0,:,:,0], mat)
       expval = np.einsum('nb,nb->n', mat1, self.mo_coeff[0,0,:,:,0]).reshape((1,self.norbs))
       print('===| Expectationvalues of Exchange energy(eV) |===\n %3s  %16s  %3s'%('no.','<Sigma_x> ','occ'))
@@ -172,7 +179,7 @@ def sigma_xc(self):
         if (i==self.nfermi[0]): print('-'*50)
         print (' %3d  %16.6f  %3d'%(i,a[0], b[0]))
     elif self.nspin==2:
-      mat = -self.get_k()
+      mat = -self.kmat
       expval = np.zeros((self.nspin, self.norbs))
       for s in range(self.nspin):
         mat1 = np.dot(self.mo_coeff[0,s,:,:,0], mat[s])

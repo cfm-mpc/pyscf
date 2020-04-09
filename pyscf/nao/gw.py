@@ -145,13 +145,17 @@ class gw(scf):
     self.get_k() = Exchange operator/energy
     mat1 is product of this Hamiltonian and molecular coefficients and it will be diagonalized in expval by einsum
     """
+    self.time_gw[8] = timer();
+    if not hasattr(self, 'kmat'): self.kmat = self.get_k()
+    self.time_gw[9] = timer();
+    if not hasattr(self, 'jmat'): self.jmat = self.get_j()
+
     if self.nspin==1:
-      mat = self.get_hcore()+self.get_j()-0.5*self.get_k()
+      mat = self.get_hcore() + self.jmat - 0.5*self.kmat
       mat1 = np.dot(self.mo_coeff[0,0,:,:,0], mat)
       expval = einsum('nb,nb->n', mat1, self.mo_coeff[0,0,:,:,0]).reshape((1,self.norbs))
     elif self.nspin==2:
-      vh = self.get_j()
-      mat = self.get_hcore()+vh[0]+vh[1]-self.get_k()
+      mat = self.get_hcore()+ self.jmat[0]+ self.jmat[1]- self.kmat
       expval = zeros((self.nspin, self.norbs))
       for s in range(self.nspin):
         mat1 = np.dot(self.mo_coeff[0,s,:,:,0], mat[s])
@@ -475,13 +479,12 @@ class gw(scf):
     self.time_gw[12] = timer();
     dm1 = self.make_rdm1()
     ecore = (self.get_hcore()*dm1[0,...,0]).sum()
-    vh,kmat = self.get_jk()
     
     if self.nspin==1:
-      etot = ecore + 0.5*((vh-0.5*kmat)*dm1[0,...,0]).sum()
+      etot = ecore + 0.5*((self.jmat-0.5*self.kmat)*dm1[0,...,0]).sum()
     elif self.nspin==2:
-      etot = ecore + 0.5*((vh[0]+vh[1]-kmat)*dm1[0,...,0]).sum()
-    else:
+      etot = ecore + 0.5*((self.jmat[0]+ self.jmat[1]- self.kmat)*dm1[0,...,0]).sum()
+    else: 
       print(__name__, self.nspin)
       raise RuntimeError('nspin?')
     
@@ -518,7 +521,7 @@ class gw(scf):
 
   def report_t(self):
     """ Prints spent time in each step of GW class"""
-    steps = ['initialize NAO','get_h0_vh_x_expval','g0w0_eigvals','snmw2sf','','scissor','etot_gw','','','']
+    steps = ['initialize NAO','get_h0_vh_x_expval','g0w0_eigvals','snmw2sf','get_k','scissor','etot_gw','','','']
     timing = list(self.time_gw[1::2]- self.time_gw[0:-1:2])
     for i in zip(timing,steps):     
       if (i[0] != 0): print('{:20.19s}:{:14.2f} secs'.format(i[1],i[0]))

@@ -74,8 +74,8 @@ mutt -e 'set content_type="text/html"' "$EMAIL" -s "$SUBJECT" <"$EMAILMESSAGE"
 
 
 #moving data to home
-mkdir REPORT
-mv *.html ./REPORT/
-mv REPORT $HOME/
+#mkdir REPORT
+#mv *.html ./REPORT/
+#mv REPORT $HOME/
 
 git clean -f
