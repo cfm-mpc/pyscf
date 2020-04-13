@@ -599,14 +599,15 @@ class gw_iter(gw):
             for pole, z_real in zip(lsos, zww):
                 self.comega_current = z_real
                 #xvx = xv.dot(x[pole[1]])
-                a = np.dot(self.kernel_sq, xvx[spin][n, pole[1], :])
+                print(spin, n, pole[1], xvx[spin].shape)
+                a = self.kernel_sq.dot(xvx[spin][nl, pole[1], :])
                 b = self.chi0_mv(a, self.comega_current)
-                a = np.dot(self.kernel_sq, b)
+                a = self.kernel_sq.dot(b)
                 si_xvx, exitCode = lgmres(k_c_opt, a, atol=self.gw_iter_tol,
                                           maxiter=self.maxiter)
                 if exitCode != 0:
                     print("LGMRES has not achieved convergence: exitCode = {}".format(exitCode))
-                contr = xvx[spin][n, pole[1], :].dot(si_xvx)
+                contr = xvx[spin][nl, pole[1], :].dot(si_xvx)
                 sn2res[spin][nl] += pole[2]*contr.real
 
     return sn2res
