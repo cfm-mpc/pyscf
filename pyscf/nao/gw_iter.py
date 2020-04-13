@@ -230,15 +230,60 @@ class gw_iter(gw):
             vxdp  = vxdp.reshape(size,self.norbs, self.norbs)
             xvx2 = np.swapaxes(vxdp,0,1)
             xvx2 = xvx2.reshape(self.norbs,-1)
-            #Third step
+            
+            # Third step
             xvx2 = np.dot(xna,xvx2)
             xvx2 = xvx2.reshape(len(self.nn[s]),size,self.norbs)
             xvx2 = np.swapaxes(xvx2,1,2)
-            xvx2 = np.dot(xvx2,c)
+
+            xvx2 = np.dot(xvx2, c)
             xvx.append(xvx2)
 
-    # 5-dominant product basis in ndCOOrdinate-format instead of reshape
+    # 5-dominant product basis with scipy sparse COO format
     elif algol=='dp_coo':
+
+        size = self.cc_da.shape[0]
+        nfdp = self.pb.dpc2s[-1]
+
+        # dominant product basis: V_{\widetilde{\mu}}^{ab}
+        v_pd = self.v_dab.reshape(nfdp*self.norbs, self.norbs)
+        if self.verbosity>3:
+            print("Vpd.shape: ", v_pd.shape)
+            print("Vpd.nnz: ", v_pd.nnz)
+
+
+        # atom_centered functional: C_{\widetilde{\mu}}^{\mu}
+        # V_{\mu}^{ab}= V_{\widetilde{\mu}}^{ab} * C_{\widetilde{\mu}}^{\mu}
+        if self.verbosity>3:
+            print("c.shape: ", self.cc_da.shape)
+            print("c.nnz: ", self.cc_da.nnz)
+
+        for s in range(self.nspin):
+            xna = self.mo_coeff[0,s,self.nn[s],:,0]
+            xmb = self.mo_coeff[0,s,:,:,0]
+            vxdp  = v_pd.dot(xmb.T)
+            
+            # Second step
+            vxdp  = vxdp.reshape(size, self.norbs, self.norbs)
+            xvx2 = np.swapaxes(vxdp, 0, 1)
+            xvx2 = xvx2.reshape(self.norbs,-1)
+            
+            # Third step
+            xvx2 = xna.dot(xvx2)
+            xvx2 = xvx2.reshape(len(self.nn[s]), size, self.norbs)
+            xvx2 = np.swapaxes(xvx2, 1, 2)
+
+            xvx2_fin = np.zeros((xvx2.shape[0], xvx2.shape[1], self.cc_da.shape[1]),
+                                dtype=xvx2.dtype)
+            # Somehow dense.dot(sparse) uses a crazy amount of memory ...
+            #xvx2 = xvx2.dot(self.cc_da)
+            for i in range(xvx2_fin.shape[0]):
+                xvx2_fin[i, :, :] = self.cc_da_trans.dot(xvx2[i, :, :].T).T
+
+            xvx.append(xvx2_fin)
+
+    # 6-dominant product basis in ndCOOrdinate-format instead of reshape
+    elif algol=='dp_ndcoo':
         size = self.cc_da.shape[0]
         v_pd  = self.pb.get_dp_vertex_array() 
         c = self.pb.get_da2cc_den()
