@@ -599,7 +599,6 @@ class gw_iter(gw):
             for pole, z_real in zip(lsos, zww):
                 self.comega_current = z_real
                 #xvx = xv.dot(x[pole[1]])
-                print(spin, n, pole[1], xvx[spin].shape)
                 a = self.kernel_sq.dot(xvx[spin][nl, pole[1], :])
                 b = self.chi0_mv(a, self.comega_current)
                 a = self.kernel_sq.dot(b)
