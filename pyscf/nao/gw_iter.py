@@ -345,10 +345,15 @@ class gw_iter(gw):
 
   def get_snmw2sf_iter(self, nbnd=None, optimize="greedy"):
     """ 
-    This computes a matrix elements of W_c: <\Psi(r)\Psi(r) | W_c(r,r',\omega) |\Psi(r')\Psi(r')>.
-    sf[spin,n,m,w] = X^n V_mu X^m W_mu_nu X^n V_nu X^m,
-    where n runs from s...f, m runs from 0...norbs, w runs from 0...nff_ia, spin=0...1 or 2.
-    1- XVX is calculated using dominant product in COO format: gw_xvx('dp_coo')
+    This computes a matrix elements of W_c:
+        <\Psi(r)\Psi(r) | W_c(r,r',\omega) |\Psi(r')\Psi(r')>.
+        sf[spin,n,m,w] = X^n V_mu X^m W_mu_nu X^n V_nu X^m,
+    
+    where   n runs from s...f,
+            m runs from 0...norbs,
+            w runs from 0...nff_ia,
+            spin=0...1 or 2.
+    1- XVX is calculated using dominant product: gw_xvx('dp_coo')
     2- I_nm = W XVX = (1-v\chi_0)^{-1}v\chi_0v
     3- S_nm = XVX W XVX = XVX * I_nm
     """
@@ -380,7 +385,9 @@ class gw_iter(gw):
             self.comega_current = w
 
             self.ncall_chi0_mv_ite = 0
-            if self.verbosity>3: print("freq: ", iw, "nn = {}; norbs = {}".format(len(self.nn[s]), self.norbs))
+            if self.verbosity>3:
+                print("freq: {}; nn = {}; norbs = {}".format(iw, len(self.nn[s]),
+                                                             self.norbs))
 
             t1 = timer()
             for n in range(len(self.nn[s])):    
@@ -570,40 +577,38 @@ class gw_iter(gw):
     """
     
     from scipy.sparse.linalg import lgmres, LinearOperator
-    if self.vpab is None:
-        v_pab = self.pb.get_ac_vertex_array(matformat=self.vertex_matrix_format,
-                                            dtype=self.dtype)
-    else:
-        v_pab = self.vpab
+
+    xvx = self.gw_xvx(self.gw_xvx_algo)
 
     sn2res = [np.zeros_like(n2w, dtype=self.dtype) for n2w in sn2w ]   
     k_c_opt = LinearOperator((self.nprod,self.nprod),
                              matvec=self.gw_vext2veffmatvec,
                              dtype=self.dtypeComplex)
 
-    for s,ww in enumerate(sn2w):
+    for spin, ww in enumerate(sn2w):
       
-        x = self.mo_coeff[0,s,:,:,0]
-        for nl,(n,w) in enumerate(zip(self.nn[s],ww)):
-            lsos = self.lsofs_inside_contour(self.ksn2e[0,s,:],w,self.dw_excl)
+        #x = self.mo_coeff[0, spin, :, :, 0]
+        for nl, (n, w) in enumerate(zip(self.nn[spin], ww)):
+            lsos = self.lsofs_inside_contour(self.ksn2e[0, spin ,:], w, self.dw_excl)
             zww = array([pole[0] for pole in lsos])
             stw = array([pole[1] for pole in lsos])
             if self.verbosity > 3:
                 print('states located inside contour: #',stw)
-            xv = v_pab.dot(x[n])
+            #xv = v_pab.dot(x[n])
+
             for pole, z_real in zip(lsos, zww):
                 self.comega_current = z_real
-                xvx = np.dot(xv, x[pole[1]])
-                a = np.dot(self.kernel_sq, xvx)
+                #xvx = xv.dot(x[pole[1]])
+                a = np.dot(self.kernel_sq, xvx[spin][n, pole[1], :])
                 b = self.chi0_mv(a, self.comega_current)
                 a = np.dot(self.kernel_sq, b)
                 si_xvx, exitCode = lgmres(k_c_opt, a, atol=self.gw_iter_tol,
                                           maxiter=self.maxiter)
                 if exitCode != 0:
                     print("LGMRES has not achieved convergence: exitCode = {}".format(exitCode))
-                contr = np.dot(xvx, si_xvx)
-                sn2res[s][nl] += pole[2]*contr.real
-    
+                contr = xvx[spin][n, pole[1], :].dot(si_xvx)
+                sn2res[spin][nl] += pole[2]*contr.real
+
     return sn2res
 
   def g0w0_eigvals_iter(self):
