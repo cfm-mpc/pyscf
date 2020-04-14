@@ -1,13 +1,14 @@
 from __future__ import print_function, division
 import sys
 import copy
-from pyscf.data.nist import HARTREE2EV
 from timeit import default_timer as timer
-import numpy as np
-from numpy import dot, zeros, einsum, pi, log, array, require
-from pyscf.nao import scf, gw
 import time
+import numpy as np
+
+from pyscf.nao import scf, gw
+from pyscf.data.nist import HARTREE2EV
 from pyscf.nao.m_gw_chi0_noxv import gw_chi0_mv, gw_chi0_mv_gpu
+from pyscf.nao.m_sparsetools import spmat_denmat
 
 def profile(fnc):
     """
@@ -71,8 +72,8 @@ class gw_iter(gw):
     from scipy.sparse.linalg import LinearOperator
     rf0 = si0 = self.rf0(ww)    
     for iw,w in enumerate(ww):                                
-      k_c = np.dot(self.kernel_sq, rf0[iw,:,:])                                         
-      b = np.dot(k_c, self.kernel_sq)               
+      k_c = self.kernel_sq.dot(rf0[iw,:,:])                                         
+      b = k_c.dot(self.kernel_sq)               
       self.comega_current = w
       k_c_opt = LinearOperator((self.nprod,self.nprod), matvec=self.gw_vext2veffmatvec, dtype=self.dtypeComplex)  
       for m in range(self.nprod): 
@@ -104,7 +105,6 @@ class gw_iter(gw):
        print('Results (W_c) are NOT similar!')     
     return [[diff/summ] , [np.amax(abs(diff))] ,[tol]]
 
-  #@profile
   def gw_xvx(self, algo=None):
     """
      calculates basis products
@@ -115,7 +115,8 @@ class gw_iter(gw):
         2- using atom-centered product basis
         3- using atom-centered product basis and BLAS multiplication
         4- using dominant product basis
-        5- using dominant product basis in COOrdinate format
+        5- using dominant product basis in COOrdinate format (scipy)
+        6- using dominant product basis in ND COOrdinate format
     """
     
     algol = algo.lower() if algo is not None else 'dp_coo'  
@@ -133,8 +134,12 @@ class gw_iter(gw):
         for s in range(self.nspin):
             xna = self.mo_coeff[0,s,self.nn[s],:,0]      #(nstat,norbs)
             xmb = self.mo_coeff[0,s,:,:,0]               #(norbs,norbs)
-            xvx_ref  = np.einsum('na,pab,mb->nmp', xna, v_pab, xmb)  #einsum: direct multiplication 
-            xvx_ref2 = np.swapaxes(np.dot(xna, np.dot(v_pab,xmb.T)),1,2)  #direct multiplication by using np.dot and swapping between axis
+            
+            # einsum: direct multiplication 
+            xvx_ref  = np.einsum('na,pab,mb->nmp', xna, v_pab, xmb)
+            
+            # direct multiplication by using np.dot and swapping between axis
+            xvx_ref2 = np.swapaxes(xna.dot(v_pab.dot(xmb.T)), 1, 2)
             #print('comparison between einsum and dot: ',np.allclose(xvx_ref,xvx_ref2,atol=1e-15)) #einsum=dot
             xvx.append(xvx_ref)
 
@@ -147,13 +152,15 @@ class gw_iter(gw):
         for s in range(self.nspin):
             xna = self.mo_coeff[0,s,self.nn[s],:,0]
             xmb = self.mo_coeff[0,s,:,:,0]
-            vx  = np.dot(v_pab1,xmb.T)        #multiplications were done one by one in 2D shape
+            
+            # multiplications were done one by one in 2D shape
+            vx  = v_pab1.dot(xmb.T)
             vx  = vx.reshape(self.nprod, self.norbs, self.norbs) #reshape into initial 3D shape
-            #Second step
+            # Second step
             xvx1 = np.swapaxes(vx,0,1)
             xvx1 = xvx1.reshape(self.norbs,-1)
-            #Third step
-            xvx1 = np.dot(xna,xvx1)
+            # Third step
+            xvx1 = xna.dot(xvx1)
             xvx1 = xvx1.reshape(len(self.nn[s]),self.nprod,self.norbs)
             xvx1 = np.swapaxes(xvx1,1,2)
             xvx.append(xvx1)
@@ -187,7 +194,7 @@ class gw_iter(gw):
     # 4-sparse-atom-centered product basis and BLAS
     elif algol=='ac_sparse':
         
-        #uses BLAS with sparse ac vertex array
+        # uses BLAS with sparse ac vertex array
         from pyscf.nao.m_rf0_den import calc_XVX
 
         t1 = timer()
@@ -225,62 +232,62 @@ class gw_iter(gw):
         for s in range(self.nspin):
             xna = self.mo_coeff[0,s,self.nn[s],:,0]
             xmb = self.mo_coeff[0,s,:,:,0]
-            vxdp  = np.dot(v_pd1,xmb.T)
+            vxdp  = v_pd1.dot(xmb.T)
             #Second step
             vxdp  = vxdp.reshape(size,self.norbs, self.norbs)
             xvx2 = np.swapaxes(vxdp,0,1)
             xvx2 = xvx2.reshape(self.norbs,-1)
             
             # Third step
-            xvx2 = np.dot(xna,xvx2)
+            xvx2 = xna.dot(xvx2)
             xvx2 = xvx2.reshape(len(self.nn[s]),size,self.norbs)
             xvx2 = np.swapaxes(xvx2,1,2)
 
-            xvx2 = np.dot(xvx2, c)
+            xvx2 = xvx2.dot(c)
             xvx.append(xvx2)
 
     # 5-dominant product basis with scipy sparse COO format
     elif algol=='dp_coo':
 
+        import sparse
+
         size = self.cc_da.shape[0]
         nfdp = self.pb.dpc2s[-1]
 
         # dominant product basis: V_{\widetilde{\mu}}^{ab}
-        v_pd = self.v_dab.reshape(nfdp*self.norbs, self.norbs)
-        if self.verbosity>3:
+        v_pd = sparse.COO.from_scipy_sparse(self.v_dab.reshape(nfdp*self.norbs, self.norbs))
+        if self.verbosity > 3:
             print("Vpd.shape: ", v_pd.shape)
             print("Vpd.nnz: ", v_pd.nnz)
 
 
         # atom_centered functional: C_{\widetilde{\mu}}^{\mu}
         # V_{\mu}^{ab}= V_{\widetilde{\mu}}^{ab} * C_{\widetilde{\mu}}^{\mu}
-        if self.verbosity>3:
+        cc_da = sparse.COO.from_scipy_sparse(self.cc_da)
+        if self.verbosity > 3:
             print("c.shape: ", self.cc_da.shape)
             print("c.nnz: ", self.cc_da.nnz)
 
         for s in range(self.nspin):
-            xna = self.mo_coeff[0,s,self.nn[s],:,0]
-            xmb = self.mo_coeff[0,s,:,:,0]
-            vxdp  = v_pd.dot(xmb.T)
-            
+
+            # need to convert the array to sparse in order to have only sparse
+            # arrays around
+            xna = sparse.COO.from_numpy(self.mo_coeff[0,s,self.nn[s],:,0])
+            xmb = sparse.COO.from_numpy(self.mo_coeff[0,s,:,:,0])
+            vxdp = sparse.COO.dot(v_pd, xmb.T)
+
             # Second step
-            vxdp  = vxdp.reshape(size, self.norbs, self.norbs)
-            xvx2 = np.swapaxes(vxdp, 0, 1)
-            xvx2 = xvx2.reshape(self.norbs,-1)
+            vxdp = vxdp.reshape((size, self.norbs, self.norbs))
+            vxdp = vxdp.transpose(axes=(1, 0, 2)).reshape((self.norbs, size*self.norbs))
+
+            # MemoryError: Unable to allocate array with shape (758, 22313, 758)
+            # and data type float32
             
             # Third step
-            xvx2 = xna.dot(xvx2)
-            xvx2 = xvx2.reshape(len(self.nn[s]), size, self.norbs)
-            xvx2 = np.swapaxes(xvx2, 1, 2)
+            vxdp = vxdp.T.dot(xna.T).T.reshape((len(self.nn[s]), size, self.norbs))
+            vxdp = vxdp.transpose(axes=(0, 2, 1))
 
-            xvx2_fin = np.zeros((xvx2.shape[0], xvx2.shape[1], self.cc_da.shape[1]),
-                                dtype=xvx2.dtype)
-            # Somehow dense.dot(sparse) uses a crazy amount of memory ...
-            #xvx2 = xvx2.dot(self.cc_da)
-            for i in range(xvx2_fin.shape[0]):
-                xvx2_fin[i, :, :] = self.cc_da_trans.dot(xvx2[i, :, :].T).T
-
-            xvx.append(xvx2_fin)
+            xvx.append(vxdp.dot(cc_da).todense())
 
     # 6-dominant product basis in ndCOOrdinate-format instead of reshape
     elif algol=='dp_ndcoo':
@@ -309,10 +316,10 @@ class gw_iter(gw):
             #nc1 = ndcoo((data, (i00, i11, i22)))
             #m1 = nc1.tocoo_pa_b('p,a,b->ap,b')  
             #Third Step
-            xvx3 = np.dot(xna,vx_ref)                               #xna(ns,a).V(a,p*b)=xvx(ns,p*b)
+            xvx3 = xna.dot(vx_ref)                               #xna(ns,a).V(a,p*b)=xvx(ns,p*b)
             xvx3 = xvx3.reshape(len(self.nn[s]),size,self.norbs) #xvx(ns,p,b)
             xvx3 = np.swapaxes(xvx3,1,2)                         #xvx(ns,b,p)
-            xvx3 = np.dot(xvx3,c)                                #XVX=xvx.c
+            xvx3 = xvx3.dot(c)                                #XVX=xvx.c
             xvx.append(xvx3)
     
     elif algol=='check':
@@ -364,17 +371,14 @@ class gw_iter(gw):
     xvx= self.gw_xvx(self.gw_xvx_algo)
 
     snm2i = []
-    #convert k_c as full matrix into Operator
+    # convert k_c as full matrix into Operator
     k_c_opt = LinearOperator((self.nprod,self.nprod),
                              matvec=self.gw_vext2veffmatvec,
                              dtype=self.dtypeComplex)
 
-    #preconditioning could be using 1- kernel
+    # preconditioning could be using 1- kernel
     # not sure ...
-    #self.kernel
-
     x0 = None
-
     for s in range(self.nspin):
         sf_aux = np.zeros((len(self.nn[s]), self.norbs, self.nprod), dtype=self.dtypeComplex)
         inm = np.zeros((len(self.nn[s]), self.norbs, len(ww)), dtype=self.dtypeComplex)
@@ -411,8 +415,9 @@ class gw_iter(gw):
                         #considers only part v\chi_{0}v XVX for virtual states above nbnd
                         if ( self.limited_nbnd and m >= nbnd[s]):
                             sf_aux[n,m,:] = a
-                            if self.verbosity>3: print('m#{} LGMRS ignored, limited_nbnd'.format(m))
-                           
+                            if self.verbosity > 3:
+                                print('m#{} LGMRS ignored, limited_nbnd'.format(m))
+
                         else:
 
                             # initial guess works pretty well!!
@@ -525,9 +530,9 @@ class gw_iter(gw):
       xvx = np.einsum('na,pab,mb->nmp', xna, v_pab, xmb, optimize=optimize)
       for iw,w in enumerate(ww):     
           # v\chi_{0} 
-          k_c = np.dot(self.kernel_sq, rf0[iw,:,:])
+          k_c = self.kernel_sq.dot(rf0[iw,:,:])
           # v\chi_{0}v 
-          b = np.dot(k_c, self.kernel_sq)
+          b = k_c.dot(self.kernel_sq)
           #(1-v\chi_{0})
           k_c = np.eye(self.nprod)-k_c
           
@@ -590,8 +595,8 @@ class gw_iter(gw):
         #x = self.mo_coeff[0, spin, :, :, 0]
         for nl, (n, w) in enumerate(zip(self.nn[spin], ww)):
             lsos = self.lsofs_inside_contour(self.ksn2e[0, spin ,:], w, self.dw_excl)
-            zww = array([pole[0] for pole in lsos])
-            stw = array([pole[1] for pole in lsos])
+            zww = np.array([pole[0] for pole in lsos])
+            stw = np.array([pole[1] for pole in lsos])
             if self.verbosity > 3:
                 print('states located inside contour: #',stw)
             #xv = v_pab.dot(x[n])
@@ -644,7 +649,7 @@ class gw_iter(gw):
       for s,(evhf,n2i,n2r,nn) in enumerate(zip(self.h0_vh_x_expval,sn2i,sn2r,self.nn)):
         sn2eval_gw.append(evhf[nn]+n2i+n2r)
         
-      sn2mismatch = zeros((self.nspin,self.norbs))
+      sn2mismatch = np.zeros((self.nspin,self.norbs))
       for s, nn in enumerate(self.nn): sn2mismatch[s,nn] = sn2eval_gw[s][:]-sn2eval_gw_prev[s][:]
       sn2eval_gw_prev = copy.copy(sn2eval_gw)
       err = 0.0
@@ -732,8 +737,8 @@ if __name__=='__main__':
     mf.kernel()
 
     gw = gw_iter(mf=mf, gto=mol, verbosity=1, niter_max_ev=1, nff_ia=5, nvrt=1, nocc=1, 
-                    use_initial_guess_ite_solver=False, 
-                    limited_nbnd=False, pass_dupl=False, write_R = False)
+                 use_initial_guess_ite_solver=False, 
+                 limited_nbnd=False, pass_dupl=False, write_R = False)
 
     gw_ref = gw.get_snmw2sf()
     gw_it = gw.get_snmw2sf_iter()
