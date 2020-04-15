@@ -128,6 +128,7 @@ class gw_iter(gw):
 
     #1-direct multiplication with np and einsum
     if algol=='simple':
+
         # atom-centered product basis: V_{\mu}^{ab}
         v_pab = self.pb.get_ac_vertex_array(matformat=self.vertex_matrix_format,
                                             dtype=self.dtype)
@@ -249,79 +250,20 @@ class gw_iter(gw):
     # 5-dominant product basis with scipy sparse COO format
     elif algol=='dp_coo':
 
-        import sparse
+        from pyscf.nao.m_gw_xvx import gw_xvx_dpcoo
 
-        size = self.cc_da.shape[0]
-        nfdp = self.pb.dpc2s[-1]
-
-        # dominant product basis: V_{\widetilde{\mu}}^{ab}
-        v_pd = sparse.COO.from_scipy_sparse(self.v_dab.reshape(nfdp*self.norbs, self.norbs))
         if self.verbosity > 3:
-            print("Vpd.shape: ", v_pd.shape)
-            print("Vpd.nnz: ", v_pd.nnz)
+            # dominant product basis: V_{\widetilde{\mu}}^{ab}
+            print("Vpd.shape: ", self.v_dab.shape)
+            print("Vpd.nnz: ", self.v_dab.nnz)
 
-
-        # atom_centered functional: C_{\widetilde{\mu}}^{\mu}
-        # V_{\mu}^{ab}= V_{\widetilde{\mu}}^{ab} * C_{\widetilde{\mu}}^{\mu}
-        cc_da = sparse.COO.from_scipy_sparse(self.cc_da)
-        if self.verbosity > 3:
+            # atom_centered functional: C_{\widetilde{\mu}}^{\mu}
+            # V_{\mu}^{ab}= V_{\widetilde{\mu}}^{ab} * C_{\widetilde{\mu}}^{\mu}
             print("c.shape: ", self.cc_da.shape)
             print("c.nnz: ", self.cc_da.nnz)
 
-        for s in range(self.nspin):
-
-            # need to convert the array to sparse in order to have only sparse
-            # arrays around
-            xna = sparse.COO.from_numpy(self.mo_coeff[0,s,self.nn[s],:,0])
-            xmb = sparse.COO.from_numpy(self.mo_coeff[0,s,:,:,0])
-            vxdp = sparse.COO.dot(v_pd, xmb.T)
-
-            # Second step
-            vxdp = vxdp.reshape((size, self.norbs, self.norbs))
-            vxdp = vxdp.transpose(axes=(1, 0, 2)).reshape((self.norbs, size*self.norbs))
-
-            # MemoryError: Unable to allocate array with shape (758, 22313, 758)
-            # and data type float32
-            
-            # Third step
-            vxdp = vxdp.T.dot(xna.T).T.reshape((len(self.nn[s]), size, self.norbs))
-            vxdp = vxdp.transpose(axes=(0, 2, 1))
-
-            xvx.append(vxdp.dot(cc_da).todense())
-
-    # 6-dominant product basis in ndCOOrdinate-format instead of reshape
-    elif algol=='dp_ndcoo':
-        size = self.cc_da.shape[0]
-        v_pd  = self.pb.get_dp_vertex_array() 
-        c = self.pb.get_da2cc_den()
-        #First step
-        data = v_pd.ravel() #v_pd.reshape(-1)
-        #i0,i1,i2 = np.mgrid[0:v_pd.shape[0],0:v_pd.shape[1],0:v_pd.shape[2] ].reshape((3,data.size))   #fails in memory
-        i0,i1,i2 = np.ogrid[0:v_pd.shape[0],0:v_pd.shape[1],0:v_pd.shape[2]]
-        i00,i11,i22 = np.asarray(np.broadcast_arrays(i0,i1,i2)).reshape((3,data.size))
-        from pyscf.nao import ndcoo
-        nc = ndcoo((data, (i00, i11, i22)))
-        m0 = nc.tocoo_pa_b('p,a,b->ap,b')
-
-        for s in range(self.nspin):
-            xna = self.mo_coeff[0,s,self.nn[s],:,0]
-            xmb = self.mo_coeff[0,s,:,:,0]
-            vx1 = m0*(xmb.T)
-            #Second Step
-            vx1 = vx1.reshape(size,self.norbs,self.norbs)   #shape (p,a,b)
-            vx_ref = vx1.reshape(self.norbs,-1)             #shape (b,p*a)
-            #data = vx1.ravel()
-            #i0,i1,i2 = np.ogrid[0:vx1.shape[0],0:vx1.shape[1],0:vx1.shape[2]]
-            #i00,i11,i22 = np.asarray(np.broadcast_arrays(i0,i1,i2)).reshape((3,data.size))
-            #nc1 = ndcoo((data, (i00, i11, i22)))
-            #m1 = nc1.tocoo_pa_b('p,a,b->ap,b')  
-            #Third Step
-            xvx3 = xna.dot(vx_ref)                               #xna(ns,a).V(a,p*b)=xvx(ns,p*b)
-            xvx3 = xvx3.reshape(len(self.nn[s]),size,self.norbs) #xvx(ns,p,b)
-            xvx3 = np.swapaxes(xvx3,1,2)                         #xvx(ns,b,p)
-            xvx3 = xvx3.dot(c)                                #XVX=xvx.c
-            xvx.append(xvx3)
-    
+        xvx = gw_xvx_dpcoo(self)
+  
     elif algol=='check':
         ref = self.gw_xvx(algo='simple')
         for s in range(self.nspin):
@@ -368,7 +310,7 @@ class gw_iter(gw):
     from scipy.sparse.linalg import LinearOperator, lgmres
     
     ww = 1j*self.ww_ia
-    xvx= self.gw_xvx(self.gw_xvx_algo)
+    xvx = self.gw_xvx(self.gw_xvx_algo)
 
     snm2i = []
     # convert k_c as full matrix into Operator
