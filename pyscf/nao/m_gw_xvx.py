@@ -2,9 +2,7 @@ from __future__ import division
 import numpy as np
 from scipy.sparse import coo_matrix, csr_matrix
 import numba as nb
-from memory_profiler import profile
 
-@profile
 def gw_xvx_dpcoo(self):
 
     xvx = []
@@ -25,6 +23,7 @@ def gw_xvx_dpcoo(self):
                              dtype=xvx2.dtype)
         # Somehow dense.dot(sparse) uses a crazy amount of memory ...
         # xvx2 = xvx2.dot(self.cc_da)
+        # better to do sparse.T.dot(dense.T).T
         for i in range(xvx2_fin.shape[0]):
             xvx2_fin[i, :, :] = self.cc_da_trans.dot(xvx2[i, :, :].T).T
 
@@ -66,39 +65,28 @@ def csrmat_denmat_custom2(indptr, indices, data, B, X, N1, N2, N3):
 
     return D
 
-@profile
 def dpcoo_step1(self, size, nfdp, spin):
     import sparse
 
     xmb = csr_matrix(self.mo_coeff[0, spin, :, :, 0]).T
-    print("xmb: ", xmb.nnz, xmb.shape)
     v_pd = self.v_dab_csr.reshape(nfdp*self.norbs, self.norbs)
     vxdp = v_pd.dot(xmb).tocoo()
-    print("nnz: ", vxdp.nnz, "shape: ", vxdp.shape)
     return sparse.COO.from_scipy_sparse(vxdp)
 
-@profile
 def dpcoo_step2(vxdp, size, norbs):
 
     xxv2 = vxdp.reshape((size, norbs, norbs))
-    print("nnz: ", xxv2.nnz, "shape: ", xxv2.shape)
     xxv2 = xxv2.transpose(axes=(1, 0, 2))
-    print("nnz: ", xxv2.nnz, "shape: ", xxv2.shape)
     xxv2 = xxv2.reshape((norbs, size*norbs))
-    print("nnz: ", xxv2.nnz, "shape: ", xxv2.shape)
     return xxv2
 
-@profile
 def dpcoo_step3(self, vxdp, size, spin):
     import sparse
 
     xna = sparse.COO.from_numpy(self.mo_coeff[0, spin, self.nn[spin], :, 0])
-    print("xna:", xna.shape, xna.nnz)
     xxv2 = xna.dot(vxdp).reshape((len(self.nn[spin]), size, self.norbs))
-    print("xxv2:", xxv2.shape, xxv2.nnz)
     return xxv2.transpose(axes=(0, 2, 1))
 
-@profile
 def dpcoo_step4(cc_da, vxdp):
     import sparse
     return vxdp.dot(sparse.COO.from_scipy_sparse(cc_da))
