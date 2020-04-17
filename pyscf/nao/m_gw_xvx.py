@@ -21,8 +21,9 @@ def gw_xvx_dpcoo(self):
 
         xvx2_fin = np.zeros((xvx2.shape[0], xvx2.shape[1], self.cc_da.shape[1]),
                              dtype=xvx2.dtype)
-        # Somehow dense.dot(sparse) uses a crazy amount of memory ...
+
         # xvx2 = xvx2.dot(self.cc_da)
+        # Somehow dense.dot(sparse) uses a crazy amount of memory ...
         # better to do sparse.T.dot(dense.T).T
         for i in range(xvx2_fin.shape[0]):
             xvx2_fin[i, :, :] = self.cc_da_trans.dot(xvx2[i, :, :].T).T
@@ -38,17 +39,37 @@ def csrmat_denmat_custom2(indptr, indices, data, B, X, N1, N2, N3):
 
     vxdp  = v_pd1.dot(xmb.T)
     vxdp  = vxdp.reshape(size,self.norbs, self.norbs)
-    xvx2 = np.swapaxes(vxdp,0,1)
-    xvx2 = xvx2.reshape(self.norbs,-1)
+    vxdp = np.swapaxes(vxdp,0,1)
+    vxdp = vxdp.reshape(self.norbs,-1)
     xvx2 = xna.dot(xvx2)
 
-    The array vxdp is pretty larger: (size*norbs, norbs) and pretty dense (0.1%)
-    It is better to avoid its allocation for large systems.
+    The array vxdp is pretty large: (nfdp*norbs, norbs) and quite dense (0.1%)
+    It is better to avoid its use for large systems, even in sparse format.
+
+    Inputs:
+        indptr: pointer index of v_dab in csr format
+        indices: column indices of v_dab in csr format
+        data: non zeros element of v_dab
+        B: transpose of self.mo_coeff[0, spin, :, :, 0]
+        X: self.mo_coeff[0, spin, self.nn[spin], :, 0]
+        N1: nfdp
+        N2: norbs
+        N3: len(nn[spin])
+
+    Outputs:
+        D: xxv2 store in dense format
     """
 
     D = np.zeros((N3, N1*N2), dtype=B.dtype)
 
+    # performs at the same time:
+    # the matrix matrix product vxdp = v_pd1.dot(xmb.T), where v_pd1 is in CSR format
+    # the reshape operations and sweepaxes on vxdp
+    # finally the matrix matrix product xvx2 = xna.dot(xvx2)
     for jp in range(N2):
+
+        # vxdp = v_pd1.dot(xmb.T)
+        # store only one row of vxdp at a time
         Ctmp = np.zeros((N1*N2), dtype=B.dtype)
         for ip in range(N1):
             i = ip*N2 + jp
@@ -59,6 +80,7 @@ def csrmat_denmat_custom2(indptr, indices, data, B, X, N1, N2, N3):
                     k = indices[ind]
                     Ctmp[ipp] += data[ind]*B[k, kp]
 
+        # xvx2 = xna.dot(xvx2)
         for ix in range(N3):
             for jx in range(N1*N2):
                 D[ix, jx] += X[ix, jp]*Ctmp[jx]
