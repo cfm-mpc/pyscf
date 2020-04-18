@@ -42,7 +42,7 @@ class gw_iter(gw):
 
     self.gw_iter_tol = kw['gw_iter_tol'] if 'gw_iter_tol' in kw else 1e-4
     self.maxiter = kw['maxiter'] if 'maxiter' in kw else 1000
-    self.gw_xvx_algo = kw['gw_xvx_algo'] if 'gw_xvx_algo' in kw else "blas"
+    self.gw_xvx_algo = kw['gw_xvx_algo'] if 'gw_xvx_algo' in kw else "ac_blas"
 
     self.limited_nbnd = kw['limited_nbnd'] if 'limited_nbnd' in kw else False
     if (self.limited_nbnd and min (self.vst) < 50 ):
@@ -54,8 +54,8 @@ class gw_iter(gw):
     self.ncall_chi0_mv_ite = 0
     self.ncall_chi0_mv_total = 0
 
-    # Store the ac product basis if necessary (sparse)
-    self.vpab = None
+    # Store the ac product basis if necessary (ac_sparse)
+    self.v_pab = None
 
   def si_c2(self,ww):
     """
@@ -344,11 +344,11 @@ class gw_iter(gw):
     ww = 1j*self.ww_ia
     rf0 = self.rf0(ww)
     #V_{\mu}^{ab}
-    if self.vpab is None:
+    if self.v_pab is None:
         v_pab = self.pb.get_ac_vertex_array(matformat="dense",
                                             dtype=self.dtype)
     else:
-        v_pab = self.vpab
+        v_pab = self.v_pab
 
     for s in range(self.nspin):
       v_eff = np.zeros((len(self.nn[s]), self.nprod), dtype=self.dtype)

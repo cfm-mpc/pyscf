@@ -61,7 +61,7 @@ def gw_xvx_ac(self):
 
         # Third step
         xvx1 = xna.dot(xvx1)
-        xvx1 = xvx1.reshape(len(self.nn[s]),self.nprod,self.norbs)
+        xvx1 = xvx1.reshape(len(self.nn[spin]), self.nprod, self.norbs)
         xvx1 = np.swapaxes(xvx1, 1, 2)
 
         xvx.append(xvx1)
@@ -104,16 +104,18 @@ def gw_xvx_ac_sparse(self):
     from pyscf.nao.m_rf0_den import calc_XVX
 
     xvx = []
-    t1 = timer()
-    v_pab = self.pb.get_ac_vertex_array(matformat="sparse", dtype=self.dtype)
-    v = self.vpab.transpose(axes=(1, 0, 2))
-    t2 = timer()
 
-    if self.verbosity>3:
-        print("Get AC vertex timing: ", t2-t1)
-        print("Vpab.shape: ", v.shape)
-        print("Vpab.nnz: ", v.nnz)
+    if self.v_pab is None:
+        t1 = timer()
+        self.v_pab = self.pb.get_ac_vertex_array(matformat="sparse", dtype=self.dtype)
+        t2 = timer()
 
+        if self.verbosity>3:
+            print("Get AC vertex timing: ", t2-t1)
+            print("Vpab.shape: ", self.v_pab.shape)
+            print("Vpab.nnz: ", self.v_pab.nnz)
+
+    v = self.v_pab.transpose(axes=(1, 0, 2))
     for spin in range(self.nspin):
 
         vx = v.dot(self.mo_coeff[0, spin, self.nn[spin], :, 0].T)
