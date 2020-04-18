@@ -1,114 +1,194 @@
 from __future__ import division
 import numpy as np
-from scipy.sparse import coo_matrix, csr_matrix
-import numba as nb
+from timeit import default_timer as timer
 
-def gw_xvx_dpcoo(self):
+def gw_xvx_ac_simple(self):
+    """
+    Simple metod to calculate basis product using atom-centered product
+    basis: V_{\mu}^{ab}
+
+    This method is used as reference.
+    direct multiplication with np and einsum
+    """
 
     xvx = []
-    size = self.cc_da.shape[0]
-    nfdp = self.pb.dpc2s[-1]
-    v_pd = self.v_dab.reshape(self.v_dab_csr.shape[0]*self.norbs, self.norbs).tocsr()
+    v_pab = self.pb.get_ac_vertex_array(matformat="dense", dtype=self.dtype)
 
     for spin in range(self.nspin):
 
-        xvx2 = csrmat_denmat_custom2(v_pd.indptr, v_pd.indices, v_pd.data,
-                                     self.mo_coeff[0, spin, :, :, 0].T,
-                                     self.mo_coeff[0, spin, self.nn[spin], :, 0],
-                                     nfdp, self.norbs, len(self.nn[spin]))
-        xvx2 = xvx2.reshape(len(self.nn[spin]), size, self.norbs)
-        xvx2 = np.swapaxes(xvx2, 1, 2)
+        #(nstat, norbs)
+        xna = self.mo_coeff[0, spin, self.nn[spin], :, 0]
 
-        xvx2_fin = np.zeros((xvx2.shape[0], xvx2.shape[1], self.cc_da.shape[1]),
-                             dtype=xvx2.dtype)
+        #(norbs,norbs)
+        xmb = self.mo_coeff[0, spin, :, :, 0]
 
-        # xvx2 = xvx2.dot(self.cc_da)
-        # Somehow dense.dot(sparse) uses a crazy amount of memory ...
-        # better to do sparse.T.dot(dense.T).T
-        for i in range(xvx2_fin.shape[0]):
-            xvx2_fin[i, :, :] = self.cc_da_trans.dot(xvx2[i, :, :].T).T
+        # einsum: direct multiplication
+        xvx_ref  = np.einsum('na,pab,mb->nmp', xna, v_pab, xmb)
 
-        xvx.append(xvx2_fin)
+        # direct multiplication by using np.dot and swapping between axis
+        xvx_ref2 = np.swapaxes(xna.dot(v_pab.dot(xmb.T)), 1, 2)
+
+        xvx.append(xvx_ref)
 
     return xvx
 
-@nb.jit(nopython=True)
-def csrmat_denmat_custom2(indptr, indices, data, B, X, N1, N2, N3):
+def gw_xvx_ac(self):
     """
-    Perform in one shot the following operations (avoiding the use of temporary arrays):
-
-    vxdp  = v_pd1.dot(xmb.T)
-    vxdp  = vxdp.reshape(size,self.norbs, self.norbs)
-    vxdp = np.swapaxes(vxdp,0,1)
-    vxdp = vxdp.reshape(self.norbs,-1)
-    xvx2 = xna.dot(xvx2)
-
-    The array vxdp is pretty large: (nfdp*norbs, norbs) and quite dense (0.1%)
-    It is better to avoid its use for large systems, even in sparse format.
-
-    Inputs:
-        indptr: pointer index of v_dab in csr format
-        indices: column indices of v_dab in csr format
-        data: non zeros element of v_dab
-        B: transpose of self.mo_coeff[0, spin, :, :, 0]
-        X: self.mo_coeff[0, spin, self.nn[spin], :, 0]
-        N1: nfdp
-        N2: norbs
-        N3: len(nn[spin])
-
-    Outputs:
-        D: xxv2 store in dense format
+    metod to calculate basis product using atom-centered product
+    basis: V_{\mu}^{ab}
     """
 
-    D = np.zeros((N3, N1*N2), dtype=B.dtype)
+    xvx = []
+    v_pab = self.pb.get_ac_vertex_array(matformat="dense", dtype=self.dtype)
 
-    # performs at the same time:
-    # the matrix matrix product vxdp = v_pd1.dot(xmb.T), where v_pd1 is in CSR format
-    # the reshape operations and sweepaxes on vxdp
-    # finally the matrix matrix product xvx2 = xna.dot(xvx2)
-    for jp in range(N2):
+    # First step: convert into a 2D array of shape (Nprod*norbs, norbs)
+    v_pab1= v_pab.reshape(self.nprod*self.norbs, self.norbs)
+    for spin in range(self.nspin):
 
-        # vxdp = v_pd1.dot(xmb.T)
-        # store only one row of vxdp at a time
-        Ctmp = np.zeros((N1*N2), dtype=B.dtype)
-        for ip in range(N1):
-            i = ip*N2 + jp
-            for kp in range(N2):
-                ipp = ip*N2 + kp
+        #(nstat, norbs)
+        xna = self.mo_coeff[0, spin, self.nn[spin], :, 0]
 
-                for ind in range(indptr[i], indptr[i+1]):
-                    k = indices[ind]
-                    Ctmp[ipp] += data[ind]*B[k, kp]
+        #(norbs,norbs)
+        xmb = self.mo_coeff[0, spin, :, :, 0]
 
-        # xvx2 = xna.dot(xvx2)
-        for ix in range(N3):
-            for jx in range(N1*N2):
-                D[ix, jx] += X[ix, jp]*Ctmp[jx]
+        vx  = v_pab1.dot(xmb.T)
+        # reshape into initial 3D shape
+        vx  = vx.reshape(self.nprod, self.norbs, self.norbs)
 
-    return D
+        # Second step: sweep axes and reshape into 2D array
+        xvx1 = np.swapaxes(vx, 0, 1)
+        xvx1 = xvx1.reshape(self.norbs, -1)
 
-def dpcoo_step1(self, size, nfdp, spin):
-    import sparse
+        # Third step
+        xvx1 = xna.dot(xvx1)
+        xvx1 = xvx1.reshape(len(self.nn[s]),self.nprod,self.norbs)
+        xvx1 = np.swapaxes(xvx1, 1, 2)
 
-    xmb = csr_matrix(self.mo_coeff[0, spin, :, :, 0]).T
-    v_pd = self.v_dab_csr.reshape(nfdp*self.norbs, self.norbs)
-    vxdp = v_pd.dot(xmb).tocoo()
-    return sparse.COO.from_scipy_sparse(vxdp)
+        xvx.append(xvx1)
 
-def dpcoo_step2(vxdp, size, norbs):
+    return xvx
 
-    xxv2 = vxdp.reshape((size, norbs, norbs))
-    xxv2 = xxv2.transpose(axes=(1, 0, 2))
-    xxv2 = xxv2.reshape((norbs, size*norbs))
-    return xxv2
+def gw_xvx_ac_blas(self):
+    """
+    Metod to calculate basis product using atom-centered product
+    basis: V_{\mu}^{ab}
 
-def dpcoo_step3(self, vxdp, size, spin):
-    import sparse
+    Use Blas to handle matrix-matrix multiplications
+    """
 
-    xna = sparse.COO.from_numpy(self.mo_coeff[0, spin, self.nn[spin], :, 0])
-    xxv2 = xna.dot(vxdp).reshape((len(self.nn[spin]), size, self.norbs))
-    return xxv2.transpose(axes=(0, 2, 1))
+    from pyscf.nao.m_rf0_den import calc_XVX
 
-def dpcoo_step4(cc_da, vxdp):
-    import sparse
-    return vxdp.dot(sparse.COO.from_scipy_sparse(cc_da))
+    xvx = []
+    v = np.einsum('pab->apb', self.pb.get_ac_vertex_array())
+
+    for spin in range(self.nspin):
+
+        vx = v.dot(self.mo_coeff[0, spin, self.nn[spin], :, 0].T)
+        xvx0 = calc_XVX(self.mo_coeff[0, spin, :, :, 0], vx)
+
+        xvx.append(xvx0.T)
+
+    return xvx
+
+def gw_xvx_ac_sparse(self):
+    """
+    Metod to calculate basis product using atom-centered product
+    basis: V_{\mu}^{ab}
+
+    Use a sparse version of the atom-centered product, allow calculations
+    of larger systems, however, the computational cost to get the sparse
+    version of the atom-centered product is very high (up to 30% of the full
+    simulation time of a GW0 run).
+    """
+
+    from pyscf.nao.m_rf0_den import calc_XVX
+
+    xvx = []
+    t1 = timer()
+    v_pab = self.pb.get_ac_vertex_array(matformat="sparse", dtype=self.dtype)
+    v = self.vpab.transpose(axes=(1, 0, 2))
+    t2 = timer()
+
+    if self.verbosity>3:
+        print("Get AC vertex timing: ", t2-t1)
+        print("Vpab.shape: ", v.shape)
+        print("Vpab.nnz: ", v.nnz)
+
+    for spin in range(self.nspin):
+
+        vx = v.dot(self.mo_coeff[0, spin, self.nn[spin], :, 0].T)
+        xvx0 = calc_XVX(self.mo_coeff[0, spin, :, :, 0], vx)
+
+        xvx.append(xvx0.T)
+
+    return xvx
+
+def gw_xvx_dp(self):
+    """
+    Metod to calculate basis product using dominant product basis V_{\mu}^{ab}
+    """
+
+    xvx = []
+    size = self.cc_da.shape[0]
+
+    # dominant product basis: V_{\widetilde{\mu}}^{ab}
+    v_pd  = self.pb.get_dp_vertex_array()
+
+    # atom_centered functional: C_{\widetilde{\mu}}^{\mu}
+    # V_{\mu}^{ab} = V_{\widetilde{\mu}}^{ab} * C_{\widetilde{\mu}}^{\mu}
+    c = self.pb.get_da2cc_den()
+
+    # First step: transform v_pd in a 2D array
+    v_pd1 = v_pd.reshape(v_pd.shape[0]*self.norbs, self.norbs)
+    for spin in range(self.nspin):
+
+        #(nstat, norbs)
+        xna = self.mo_coeff[0, spin, self.nn[spin], :, 0]
+
+        #(norbs,norbs)
+        xmb = self.mo_coeff[0, spin, :, :, 0]
+
+        vxdp  = v_pd1.dot(xmb.T)
+
+        # Second step
+        vxdp  = vxdp.reshape(size, self.norbs, self.norbs)
+        xvx2 = np.swapaxes(vxdp, 0, 1)
+        xvx2 = xvx2.reshape(self.norbs, -1)
+
+        # Third step
+        xvx2 = xna.dot(xvx2)
+        xvx2 = xvx2.reshape(len(self.nn[spin]), size, self.norbs)
+        xvx2 = np.swapaxes(xvx2, 1, 2)
+
+        xvx2 = xvx2.dot(c)
+
+        xvx.append(xvx2)
+
+    return xvx
+
+def gw_xvx_dp_sparse(self):
+    """
+    Method to calculate basis product using dominant product basis V_{\mu}^{ab}
+
+    Take advantages of the sparsity of the dominant product basis.
+    Numba library must be installed
+    """
+
+    from pyscf.nao.m_gw_xvx_dp_sparse import gw_xvx_sparse_dp
+
+    try:
+        import numba as nb
+    except:
+        raise ValueError("Numba must be install to use gw_xvx dp_sparse method")
+
+    if self.verbosity > 3:
+        # dominant product basis: V_{\widetilde{\mu}}^{ab}
+        print("V_dab.shape: ", self.v_dab.shape)
+        print("V_dab.nnz: ", self.v_dab.nnz)
+
+        # atom_centered functional: C_{\widetilde{\mu}}^{\mu}
+        # V_{\mu}^{ab}= V_{\widetilde{\mu}}^{ab} * C_{\widetilde{\mu}}^{\mu}
+        print("cc_da.shape: ", self.cc_da.shape)
+        print("cc_da.nnz: ", self.cc_da.nnz)
+
+    return gw_xvx_sparse_dp(self)

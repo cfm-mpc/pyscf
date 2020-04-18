@@ -44,11 +44,6 @@ class gw_iter(gw):
     self.maxiter = kw['maxiter'] if 'maxiter' in kw else 1000
     self.gw_xvx_algo = kw['gw_xvx_algo'] if 'gw_xvx_algo' in kw else "blas"
 
-    if self.gw_xvx_algo == "ac_sparse":
-        self.vertex_matrix_format = "sparse"
-    else:
-        self.vertex_matrix_format = "dense"
-
     self.limited_nbnd = kw['limited_nbnd'] if 'limited_nbnd' in kw else False
     if (self.limited_nbnd and min (self.vst) < 50 ):
         print('Too few virtual states, limited_nbnd ignored!')
@@ -114,156 +109,50 @@ class gw_iter(gw):
         1- direct multiplication by using np.dot and np.einsum via swapping between axis
         2- using atom-centered product basis
         3- using atom-centered product basis and BLAS multiplication
-        4- using dominant product basis
-        5- using dominant product basis in COOrdinate format (scipy)
-        6- using dominant product basis in ND COOrdinate format
+        4- using sparse atom-centered product basis and BLAS multiplication
+        5- using dominant product basis
+        6- using sparse dominant product basis
     """
     
     algol = algo.lower() if algo is not None else 'dp_coo'  
     print("gw_xvx algo: ", algol)
-    xvx=[]
 
-    # we should write function for each algo
-    # this is definitively too long
-
-    #1-direct multiplication with np and einsum
+    # 1-direct multiplication with np and einsum
     if algol=='simple':
 
-        # atom-centered product basis: V_{\mu}^{ab}
-        v_pab = self.pb.get_ac_vertex_array(matformat=self.vertex_matrix_format,
-                                            dtype=self.dtype)
-        for s in range(self.nspin):
-            xna = self.mo_coeff[0,s,self.nn[s],:,0]      #(nstat,norbs)
-            xmb = self.mo_coeff[0,s,:,:,0]               #(norbs,norbs)
-            
-            # einsum: direct multiplication 
-            xvx_ref  = np.einsum('na,pab,mb->nmp', xna, v_pab, xmb)
-            
-            # direct multiplication by using np.dot and swapping between axis
-            xvx_ref2 = np.swapaxes(xna.dot(v_pab.dot(xmb.T)), 1, 2)
-            #print('comparison between einsum and dot: ',np.allclose(xvx_ref,xvx_ref2,atol=1e-15)) #einsum=dot
-            xvx.append(xvx_ref)
+        from pyscf.nao.m_gw_xvx import gw_xvx_ac_simple
+        xvx = gw_xvx_ac_simple(self)
 
-    #2-atom-centered product basis
+    # 2-atom-centered product basis
     elif algol=='ac':
-        v_pab = self.pb.get_ac_vertex_array(matformat=self.vertex_matrix_format,
-                                            dtype=self.dtype)
-        #First step
-        v_pab1= v_pab.reshape(self.nprod*self.norbs, self.norbs)  #2D shape
-        for s in range(self.nspin):
-            xna = self.mo_coeff[0,s,self.nn[s],:,0]
-            xmb = self.mo_coeff[0,s,:,:,0]
-            
-            # multiplications were done one by one in 2D shape
-            vx  = v_pab1.dot(xmb.T)
-            vx  = vx.reshape(self.nprod, self.norbs, self.norbs) #reshape into initial 3D shape
-            # Second step
-            xvx1 = np.swapaxes(vx,0,1)
-            xvx1 = xvx1.reshape(self.norbs,-1)
-            # Third step
-            xvx1 = xna.dot(xvx1)
-            xvx1 = xvx1.reshape(len(self.nn[s]),self.nprod,self.norbs)
-            xvx1 = np.swapaxes(xvx1,1,2)
-            xvx.append(xvx1)
+
+        from pyscf.nao.m_gw_xvx import gw_xvx_ac
+        xvx = gw_xvx_ac(self)
 
     # 3-atom-centered product basis and BLAS
-    elif algol=='blas':
+    elif algol=='ac_blas':
         
-        #uses BLAS
-        from pyscf.nao.m_rf0_den import calc_XVX
-
-        t1 = timer()
-        v = np.einsum('pab->apb', self.pb.get_ac_vertex_array())
-        t2 = timer()
-
-        if self.verbosity>3:
-            print("Get AC vertex timing: ", t2-t1)
-            print("Vpab.shape: ", v.shape)
-
-        for s in range(self.nspin):
-            #vx = np.dot(v, self.mo_coeff[0,s,self.nn[s],:,0].T)
-            # Equivalent to
-            # B = self.mo_coeff[0,s,self.nn[s],:,0].T
-            # vx = np.zeros((v.shape[0], v.shape[1], B.shape[1]))
-            # for i in range(v.shape[0]):
-            #     vx[i, :, :] = v[i, :, :].dot(B)
-
-            vx = v.dot(self.mo_coeff[0,s,self.nn[s],:,0].T)
-            xvx0 = calc_XVX(self.mo_coeff[0,s,:,:,0], vx)
-            xvx.append(xvx0.T)          
+        from pyscf.nao.m_gw_xvx import gw_xvx_ac_blas
+        xvx = gw_xvx_ac_blas(self)
 
     # 4-sparse-atom-centered product basis and BLAS
     elif algol=='ac_sparse':
+
+        from pyscf.nao.m_gw_xvx import gw_xvx_ac_sparse
+        xvx = gw_xvx_ac_sparse(self)
         
-        # uses BLAS with sparse ac vertex array
-        from pyscf.nao.m_rf0_den import calc_XVX
-
-        t1 = timer()
-        self.vpab = self.pb.get_ac_vertex_array(matformat="sparse",
-                                        dtype=self.dtype)
-        v = self.vpab.transpose(axes=(1, 0, 2))
-        t2 = timer()
-
-        if self.verbosity>3:
-            print("Get AC vertex timing: ", t2-t1)
-            print("Vpab.shape: ", v.shape)
-            print("Vpab.nnz: ", v.nnz)
-
-        for s in range(self.nspin):
-            #vx = np.dot(v, self.mo_coeff[0,s,self.nn[s],:,0].T)
-            # Equivalent to
-            # B = self.mo_coeff[0,s,self.nn[s],:,0].T
-            # vx = np.zeros((v.shape[0], v.shape[1], B.shape[1]))
-            # for i in range(v.shape[0]):
-            #     vx[i, :, :] = v[i, :, :].dot(B)
-
-            vx = v.dot(self.mo_coeff[0,s,self.nn[s],:,0].T)
-            xvx0 = calc_XVX(self.mo_coeff[0,s,:,:,0], vx)
-            xvx.append(xvx0.T)          
-
-    # 4-dominant product basis
+    # 5-dominant product basis
     elif algol=='dp':
 
-        size = self.cc_da.shape[0]
-        v_pd  = self.pb.get_dp_vertex_array()   #dominant product basis: V_{\widetilde{\mu}}^{ab}
-        c = self.pb.get_da2cc_den()             #atom_centered functional: C_{\widetilde{\mu}}^{\mu}
-                                 #V_{\mu}^{ab}= V_{\widetilde{\mu}}^{ab} * C_{\widetilde{\mu}}^{\mu}
-        #First step
-        v_pd1 = v_pd.reshape(v_pd.shape[0]*self.norbs, self.norbs)    #2D shape
-        for s in range(self.nspin):
-            xna = self.mo_coeff[0,s,self.nn[s],:,0]
-            xmb = self.mo_coeff[0,s,:,:,0]
-            vxdp  = v_pd1.dot(xmb.T)
-            #Second step
-            vxdp  = vxdp.reshape(size,self.norbs, self.norbs)
-            xvx2 = np.swapaxes(vxdp,0,1)
-            xvx2 = xvx2.reshape(self.norbs,-1)
-            
-            # Third step
-            xvx2 = xna.dot(xvx2)
-            xvx2 = xvx2.reshape(len(self.nn[s]),size,self.norbs)
-            xvx2 = np.swapaxes(xvx2,1,2)
+        from pyscf.nao.m_gw_xvx import gw_xvx_dp
+        xvx = gw_xvx_dp(self)
 
-            xvx2 = xvx2.dot(c)
-            xvx.append(xvx2)
+    # 6-dominant product basis with scipy sparse COO format
+    elif algol=='dp_sparse':
 
-    # 5-dominant product basis with scipy sparse COO format
-    elif algol=='dp_coo':
+        from pyscf.nao.m_gw_xvx import gw_xvx_dp_sparse
+        xvx = gw_xvx_dp_sparse(self)
 
-        from pyscf.nao.m_gw_xvx import gw_xvx_dpcoo
-
-        if self.verbosity > 3:
-            # dominant product basis: V_{\widetilde{\mu}}^{ab}
-            print("Vpd.shape: ", self.v_dab.shape)
-            print("Vpd.nnz: ", self.v_dab.nnz)
-
-            # atom_centered functional: C_{\widetilde{\mu}}^{\mu}
-            # V_{\mu}^{ab}= V_{\widetilde{\mu}}^{ab} * C_{\widetilde{\mu}}^{\mu}
-            print("c.shape: ", self.cc_da.shape)
-            print("c.nnz: ", self.cc_da.nnz)
-
-        xvx = gw_xvx_dpcoo(self)
-  
     elif algol=='check':
         ref = self.gw_xvx(algo='simple')
         for s in range(self.nspin):
@@ -456,7 +345,7 @@ class gw_iter(gw):
     rf0 = self.rf0(ww)
     #V_{\mu}^{ab}
     if self.vpab is None:
-        v_pab = self.pb.get_ac_vertex_array(matformat=self.vertex_matrix_format,
+        v_pab = self.pb.get_ac_vertex_array(matformat="dense",
                                             dtype=self.dtype)
     else:
         v_pab = self.vpab
