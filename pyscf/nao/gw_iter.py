@@ -546,6 +546,8 @@ class gw_iter(gw):
     k_c_opt = LinearOperator((self.nprod,self.nprod),
                              matvec=self.gw_vext2veffmatvec,
                              dtype=self.dtypeComplex)
+ 
+    states=np.array([])
 
     for s,ww in enumerate(sn2w):
       
@@ -554,6 +556,7 @@ class gw_iter(gw):
             lsos = self.lsofs_inside_contour(self.ksn2e[0,s,:],w,self.dw_excl)
             zww = array([pole[0] for pole in lsos])
             stw = array([pole[1] for pole in lsos])
+            states = np.concatenate((states, stw), axis=0)
             if self.verbosity > 3:
                 print('states located inside contour: #',stw)
             xv = v_pab.dot(x[n])
@@ -600,13 +603,47 @@ class gw_iter(gw):
       Tolerance to convergence: {}\n
       GW corection for eigenvalues STARTED:
       """.format(self.niter_max_ev, self.nff_ia, len(self.nn[0]), self.tol_ev)
-      print(mess)    
+      print(mess)  
+  
+    perv1 = [np.zeros(len(self.nn[s])) for s in range(self.nspin)]
+    perv2 = [np.zeros(len(self.nn[s])) for s in range(self.nspin)]
+    sn2i_conv = False
+    sn2r_conv = False
 
     for i in range(self.niter_max_ev):
-      sn2i = self.gw_corr_int_iter(sn2eval_gw)
-      sn2r = self.gw_corr_res_iter(sn2eval_gw)
-      print(sn2r)
-      
+
+      if sn2i_conv:   sn2i = perv1
+      else:           sn2i = self.gw_corr_int_iter(sn2eval_gw)
+      if sn2r_conv:   sn2r = perv2
+      else:           sn2r = self.gw_corr_res_iter(sn2eval_gw)
+
+
+      if (all([np.allclose(x, y, atol=self.tol_ev) for x, y in zip(sn2i, perv1)])): 
+        sn2i_conv = True      
+        print('Int converged') 
+ 
+      if (all([np.allclose(x, y, atol=self.tol_ev) for x, y in zip(sn2r, perv2)])): 
+        sn2r_conv = True
+        print('Res converged')
+
+
+      #if (i>0 and np.allclose(sn2i[0], perv1[0], atol=self.tol_ev)): 
+      #  print('Int UP converged') 
+      #if (i>0 and np.allclose(sn2i[1], perv1[1], atol=self.tol_ev)): 
+      #  print('Int DN converged') 
+ 
+      #if (i>0 and np.allclose(sn2r[0], perv2[0], atol=self.tol_ev)): 
+      #  print('Res UP converged')  
+      #if (i>0 and np.allclose(sn2r[1], perv2[1], atol=self.tol_ev)): 
+      #  print('Res DN converged')    
+      #if (i>0 and states.shape == perv3.shape and np.allclose(states, perv3, atol=1e-02)): 
+        #print('states inside cntour are identical')    
+
+      perv1 = sn2i
+      perv2 = sn2r
+      #perv3 = states
+
+
       sn2eval_gw = []
       for s,(evhf,n2i,n2r,nn) in enumerate(zip(self.h0_vh_x_expval,sn2i,sn2r,self.nn)):
         sn2eval_gw.append(evhf[nn]+n2i+n2r)
@@ -619,8 +656,8 @@ class gw_iter(gw):
 
       if self.verbosity>0:
         np.set_printoptions(linewidth=1000, suppress=True, precision=5)
-        print('Iteration #{}  Relative Error: {:.7f}'.format(i+1, err))
-
+        print('Iteration #{:3d}, Relative Error: {:.8f}, Time spent up to now: {:.1f} secs'
+                .format(i+1, err, timer()-self.time_gw[0]))
       if self.verbosity>1:
         #print(sn2mismatch)
         for s,n2ev in enumerate(sn2eval_gw):
@@ -676,7 +713,11 @@ class gw_iter(gw):
       #print(self.mo_energy_g0w0)
       argsrt = np.argsort(self.mo_energy_gw[0,s,:])
       self.argsort.append(argsrt)
-      if self.verbosity>0: print(__name__, '\t\t====> Spin {}: energy-sorted MO indices: {}'.format(str(s+1),argsrt))
+
+      if self.verbosity>2: 
+        order = self.argsort[s][self.start_st[s]:self.finish_st[s]]        
+        print(__name__, '\t\t====> Spin {}: energy-sorted MO indices: {}'.format(str(s+1),order))
+      
       self.mo_energy_gw[0,s,:] = np.sort(self.mo_energy_gw[0,s,:])
       for n,m in enumerate(argsrt): self.mo_coeff_gw[0,s,n] = self.mo_coeff[0,s,m]
  
