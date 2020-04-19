@@ -10,6 +10,7 @@ from pyscf.nao.log_mesh import funct_log_mesh
 from pyscf.data.nist import HARTREE2EV
 from pyscf.nao.m_valence import get_str_fin
 from timeit import default_timer as timer
+import time
 from numpy import stack, dot, zeros, einsum, pi, log, array, require
 import scipy.sparse as sparse
 from pyscf.nao import scf
@@ -30,6 +31,7 @@ class gw(scf):
     """ Constructor G0W0 class """
     # how to exclude from the input the dtype and xc_code ?
 
+    self.start_time = time.time()
     self.time_gw = np.zeros(24)
     self.time_gw[0] = timer();
     
@@ -476,7 +478,8 @@ class gw(scf):
     self.xc_code = 'GW'
     if self.verbosity>4:
       print(__name__,'\t\t====> Performed xc_code: {}\n '.format(self.xc_code))
-      print('\nConverged GW-corrected eigenvalues:\n',self.mo_energy_gw*HARTREE2EV)
+      print('\nConverged GW-corrected eigenvalues (Ha):\n',
+        [self.mo_energy_gw[0,s][self.start_st[s]:self.finish_st[s]] for s in range(self.nspin)])
 
     if self.write_R:    self.write_data()
     

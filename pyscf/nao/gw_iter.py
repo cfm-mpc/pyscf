@@ -555,10 +555,11 @@ class gw_iter(gw):
         for nl,(n,w) in enumerate(zip(self.nn[s],ww)):
             lsos = self.lsofs_inside_contour(self.ksn2e[0,s,:],w,self.dw_excl)
             zww = array([pole[0] for pole in lsos])
-            stw = array([pole[1] for pole in lsos])
-            states = np.concatenate((states, stw), axis=0)
+
             if self.verbosity > 3:
+                stw = array([pole[1] for pole in lsos])
                 print('states located inside contour: #',stw)
+
             xv = v_pab.dot(x[n])
             for pole, z_real in zip(lsos, zww):
                 self.comega_current = z_real
@@ -570,9 +571,8 @@ class gw_iter(gw):
                 self.time_gw[15] += tt2 - tt1
                 a = np.dot(self.kernel_sq, b)
 
-                if self.use_initial_guess_ite_solver:
-                    if nl > 0:
-                        x0 = copy.deepcopy(prev_sol)
+                if self.use_initial_guess_ite_solver and nl > 0:
+                    x0 = prev_sol
 
                 si_xvx, exitCode = lgmres(k_c_opt, a, atol=self.gw_iter_tol,
                                           maxiter=self.maxiter, x0 = x0)
@@ -584,25 +584,11 @@ class gw_iter(gw):
                 sn2res[s][nl] += pole[2]*contr.real
 
             if self.use_initial_guess_ite_solver:
-                prev_sol = copy.deepcopy(si_xvx)
+                prev_sol = si_xvx
 
     t2 = timer()
     self.time_gw[19] += t2 - t1    
     return sn2res
-
-
-  def gw_corr_res_init_guess (self, sn2w):
-    """
-    This computes a residue part of the GW correction at energies in 
-    iterative procedure
-    """
-    states=np.array([])
-    for s,ww in enumerate(sn2w):
-        for nl,(n,w) in enumerate(zip(self.nn[s],ww)):
-            lsos = self.lsofs_inside_contour(self.ksn2e[0,s,:],w,self.dw_excl)
-            stw = array([pole[1] for pole in lsos])
-            states = np.concatenate((states, stw), axis=0)
-    return states
 
   def g0w0_eigvals_iter(self):
     """
@@ -746,11 +732,11 @@ class gw_iter(gw):
       for n,m in enumerate(argsrt): self.mo_coeff_gw[0,s,n] = self.mo_coeff[0,s,m]
  
     self.time_gw[21] = timer();
-
     self.xc_code = 'GW'
-    if self.verbosity>3:
+    if self.verbosity>4:
       print(__name__,'\t\t====> Performed xc_code: {}\n '.format(self.xc_code))
-      print('\nConverged GW-corrected eigenvalues:\n',self.mo_energy_gw*HARTREE2EV)
+      print('\nConverged GW-corrected eigenvalues (Ha):\n',
+        [self.mo_energy_gw[0,s][self.start_st[s]:self.finish_st[s]] for s in range(self.nspin)])
 
     if self.write_R:    self.write_data()
     self.write_chi0_mv_timing("gw_iter_chi0_mv.txt")
@@ -769,7 +755,7 @@ if __name__=='__main__':
     mf.kernel()
 
     gw = gw_iter(mf=mf, gto=mol, verbosity=1, niter_max_ev=1, nff_ia=5, nvrt=1, nocc=1, 
-                    use_initial_guess_ite_solver=False, 
+                    use_initial_guess_ite_solver=True, 
                     limited_nbnd=False, pass_dupl=False, write_R = False)
 
     gw_ref = gw.get_snmw2sf()
@@ -782,11 +768,15 @@ if __name__=='__main__':
             np.allclose(gw_it, gw_ref, atol= gw.gw_iter_tol)) 
     print([abs(gw_it[s]-gw_ref[s]).sum() for s in range(gw.nspin)])  
 
-    sn2eval_gw = [np.copy(gw.ksn2e[0,s,nn]) for s,nn in enumerate(gw.nn) ]
-    sn2r_it  = gw.gw_corr_res_iter(sn2eval_gw)
-    sn2r_ref = gw.gw_corr_res(sn2eval_gw)
+    sn2w = [np.copy(gw.ksn2e[0,s,nn]) for s,nn in enumerate(gw.nn)]
+    t1 = timer()
+    sn2r_it  = gw.gw_corr_res_iter(sn2w)
+    t2 = timer()
+    sn2r_ref = gw.gw_corr_res(sn2w)
+    t3 = timer()
     print('Comparison between energies in residue part obtained from gw_iter and gw classes: ',
             np.allclose(sn2r_it, sn2r_ref, atol= gw.gw_iter_tol))
-
+    print([abs(sn2r_it[s]-sn2r_ref[s]).sum() for s in range(gw.nspin)])
+    print('iter Vs. ref', t2-t1, t3-t2)
     #gw.kernel_gw_iter()
     #gw.report()

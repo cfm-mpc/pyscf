@@ -1,9 +1,7 @@
 from __future__ import print_function, division
 import numpy as np
 from pyscf.data.nist import HARTREE2EV
-import time
-
-start_time = time.time()
+import time, socket, getpass
 
 def report_gw (self):
     """ Prints the energy levels of mean-field and G0W0"""
@@ -19,7 +17,8 @@ def report_gw (self):
     egwev = self.mo_energy_gw[0].T * HARTREE2EV
     file_name= ''.join(self.get_symbols())
     with open('report_'+file_name+'.out','w') as out_file:
-        out_file.write('Job started at {}, on {}.\n'.format(time.strftime("%H:%M:%S", time.gmtime(start_time)),time.strftime("%c")))
+        out_file.write('Job started on {}, @ {}-{}.\n'.format(time.strftime("%c",
+             time.localtime(self.start_time)), socket.gethostname(), getpass.getuser()))
         out_file.write('='*35+'| INPUT file |'+'='*35+'\n'+inp+'\n'+'='*85+'\n')
         if self.nspin==1:
             print('\n','='*50,'\n','='*12,'|G0W0 eigenvalues (eV)|','='*13,'\n','='*50)
@@ -67,9 +66,11 @@ def report_gw (self):
 
         print('\n=====| Timings of main algorithms |=====')
         report_gw_t(self)
-        out_file.write('\nTotal spent time :{:14.2f} secs'.format (self.time_gw[-1]-self.time_gw[0]))
-        print('\nJOB DONE! \t {}'.format(time.strftime("%c")))
-        out_file.write('\nJOB DONE! \t {}'.format(time.strftime("%c"))) 
+        elapsed_time = self.time_gw[-1]-self.time_gw[0]
+        out_file.write('\nTotal spent time :{:14.2f} secs'.format (elapsed_time))
+        finish_t =  elapsed_time + self.start_time
+        print('\nJOB DONE! \t {}'.format(time.strftime("%c", time.localtime(finish_t))))
+        out_file.write('\nJOB DONE! \t {}'.format(time.strftime("%c", time.localtime(finish_t))))
         out_file.close
 
 
@@ -147,7 +148,7 @@ def report_mfx(self, dm1=None):
             ss = self.mf.spin_square()
             print('<S^2> and  2S+1                  :%16.7f %16.7f'%(ss[0],ss[1]))
             print('Instead of                       :%16.7f %16.7f'%(s_ref, 2*sp+1))
-    elapsed_time = time.time() - start_time
+    elapsed_time = time.time() - self.start_time
     print('\nMean-field running time is: {}'.format(time.strftime("%H:%M:%S", time.gmtime(elapsed_time))))
     #sys.stdout.close()
 
@@ -217,8 +218,9 @@ def report_gw_t(self):
              'etot_gw']                                #2223
 
     timing = list(self.time_gw[1::2]- self.time_gw[0:-1:2])
-    for i in zip(timing,steps):     
+    for i in zip(timing, steps):     
       if (round(i[0],3) != 0): print('{:20.19s}:{:14.2f} secs'.format(i[1],i[0]))
+
     print('-'*20,'\nTotal spent time    :{:14.2f} secs'.format (self.time_gw[-1]-self.time_gw[0]),'\n')       
 
 #
