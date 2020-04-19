@@ -64,9 +64,12 @@ def report_gw (self):
                 out_file.write("\nWarning: Spin {}, swapping in QP orbital energies has happened!".format(s+1))
                 print('Energy-sorted MO indices: \t {}'.format(swap))                
                 out_file.write('\nEnergy-sorted MO indices: \t {}'.format(swap))
-        elapsed_time = time.time() - start_time
-        print('\nTotal running time is: {}\nJOB DONE! \t {}'.format(time.strftime("%H:%M:%S", time.gmtime(elapsed_time)),time.strftime("%c")))
-        out_file.write('\nTotal running time is: {}\nJOB DONE! \t {}'.format(time.strftime("%H:%M:%S", time.gmtime(elapsed_time)),time.strftime("%c"))) 
+
+        print('\n=====| Timings of main algorithms |=====')
+        report_gw_t(self)
+        out_file.write('\nTotal spent time :{:14.2f} secs'.format (self.time_gw[-1]-self.time_gw[0]))
+        print('\nJOB DONE! \t {}'.format(time.strftime("%c")))
+        out_file.write('\nJOB DONE! \t {}'.format(time.strftime("%c"))) 
         out_file.close
 
 
@@ -104,7 +107,7 @@ def report_mfx(self, dm1=None):
         exp_x = np.einsum('nb,nb->n', mat_x, self.mo_coeff[0,0,:,:,0])
         mat_f = np.dot(self.mo_coeff[0,0,:,:,0], fock)
         exp_f = np.einsum('nb,nb->n', mat_f, self.mo_coeff[0,0,:,:,0])
-        print('='*20,'| Restricted HF expectation values (eV) |','='*20)
+        print('\n','='*20,'| Restricted HF expectation values (eV) |','='*20)
         print('%2s  %13s  %13s  %13s  %13s  %13s  %3s'%('no.','<H_core>','<K>  ','<Sigma_x>','Fock   ','MF energy ','occ'))
         for i, (a,b,c,d,e,f) in enumerate(zip(exp_h.T*HARTREE2EV,exp_co.T*HARTREE2EV, exp_x.T*HARTREE2EV,exp_f.T*HARTREE2EV,self.mo_energy.T*HARTREE2EV, self.mo_occ[0].T)):   
           if (i==self.nfermi[0]): print('-'*83)
@@ -125,7 +128,7 @@ def report_mfx(self, dm1=None):
           exp_x[s] = np.einsum('nb,nb->n', mat_x, self.mo_coeff[0,s,:,:,0])
           mat_f = np.dot(self.mo_coeff[0,s,:,:,0], fock[s])
           exp_f[s] = np.einsum('nb,nb->n', mat_f, self.mo_coeff[0,s,:,:,0])
-        print('='*59,'| Unrestricted HF expectation values (eV) |','='*60)
+        print('\n','='*59,'| Unrestricted HF expectation values (eV) |','='*60)
         print('%2s  %13s  %13s  %13s  %13s  %13s  %3s |%13s  %13s  %13s  %13s  %13s  %3s '%('no.','<H_core>','<K>  ','<Sigma_x>','Fock   ','MF energy ','occ','<H_core>','<K>   ','<Sigma_x>','Fock  ','MF energy','occ'))
         for i , (a,b,c,d,e,f) in enumerate(zip(exp_h.T*HARTREE2EV,exp_co.T*HARTREE2EV, exp_x.T*HARTREE2EV,exp_f.T*HARTREE2EV,self.mo_energy.T*HARTREE2EV, self.mo_occ[0].T)):
           if (i==self.nfermi[0] or i==self.nfermi[1]): print('-'*163)
@@ -201,8 +204,22 @@ def sigma_xc(self):
             for i , (a,b) in enumerate(zip(sigma_gw_c.T* HARTREE2EV,self.mo_occ[0].T)):
                 if (i==self.nfermi[0] or i==self.nfermi[1]): print('-'*60)
                 print(' %3d  %16.6f  %3d  | %13.6f  %3d'%(i, a[0],b[0],a[1], b[1]))
-            
-        
+ 
+
+def report_gw_t(self):
+    """Lists spent time within main GW calculation"""
+    steps = ['initialize NAO',                         #01
+             'get_h0_vh_x_expval',' 1-get_K', ' 2-get_J',#23-45-67
+             'G0W0_eigvals','  1-snmw2sf','   1-1-XVX','   1-2-chi_0', #89-1011-1213-1415
+                            '  2-corr_int_tot',        #1617
+                            '  3-corr_res_tot',        #1819
+             'scissor',                                #2021
+             'etot_gw']                                #2223
+
+    timing = list(self.time_gw[1::2]- self.time_gw[0:-1:2])
+    for i in zip(timing,steps):     
+      if (round(i[0],3) != 0): print('{:20.19s}:{:14.2f} secs'.format(i[1],i[0]))
+    print('-'*20,'\nTotal spent time    :{:14.2f} secs'.format (self.time_gw[-1]-self.time_gw[0]),'\n')       
 
 #
 # Example of reporting expectation values of mean-field calculations.
