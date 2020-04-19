@@ -548,7 +548,7 @@ class gw_iter(gw):
                              dtype=self.dtypeComplex)
  
     states=np.array([])
-
+    x0 = None
     for s,ww in enumerate(sn2w):
       
         x = self.mo_coeff[0,s,:,:,0]
@@ -569,16 +569,40 @@ class gw_iter(gw):
                 tt2 = timer()               
                 self.time_gw[15] += tt2 - tt1
                 a = np.dot(self.kernel_sq, b)
+
+                if self.use_initial_guess_ite_solver:
+                    if nl > 0:
+                        x0 = copy.deepcopy(prev_sol)
+
                 si_xvx, exitCode = lgmres(k_c_opt, a, atol=self.gw_iter_tol,
-                                          maxiter=self.maxiter)
+                                          maxiter=self.maxiter, x0 = x0)
                 if exitCode != 0:
                     print("LGMRES has not achieved convergence: exitCode = {}".format(exitCode))
+                #if nl > 0: print('prev_sol ,si_xvx', (abs(prev_sol - si_xvx).sum()))
+
                 contr = np.dot(xvx, si_xvx)
                 sn2res[s][nl] += pole[2]*contr.real
+
+            if self.use_initial_guess_ite_solver:
+                prev_sol = copy.deepcopy(si_xvx)
 
     t2 = timer()
     self.time_gw[19] += t2 - t1    
     return sn2res
+
+
+  def gw_corr_res_init_guess (self, sn2w):
+    """
+    This computes a residue part of the GW correction at energies in 
+    iterative procedure
+    """
+    states=np.array([])
+    for s,ww in enumerate(sn2w):
+        for nl,(n,w) in enumerate(zip(self.nn[s],ww)):
+            lsos = self.lsofs_inside_contour(self.ksn2e[0,s,:],w,self.dw_excl)
+            stw = array([pole[1] for pole in lsos])
+            states = np.concatenate((states, stw), axis=0)
+    return states
 
   def g0w0_eigvals_iter(self):
     """
@@ -618,25 +642,25 @@ class gw_iter(gw):
       else:           sn2r = self.gw_corr_res_iter(sn2eval_gw)
 
 
-      if (all([np.allclose(x, y, atol=self.tol_ev) for x, y in zip(sn2i, perv1)])): 
+      if (all([np.allclose(x, y, atol = self.tol_ev) for x, y in zip(sn2i, perv1)])): 
         sn2i_conv = True      
         print('Int converged') 
  
-      if (all([np.allclose(x, y, atol=self.tol_ev) for x, y in zip(sn2r, perv2)])): 
+      if (all([np.allclose(x, y, atol = self.tol_ev) for x, y in zip(sn2r, perv2)])): 
         sn2r_conv = True
         print('Res converged')
 
 
-      #if (i>0 and np.allclose(sn2i[0], perv1[0], atol=self.tol_ev)): 
+      #if (np.allclose(sn2i[0], perv1[0], atol=self.tol_ev)): 
       #  print('Int UP converged') 
-      #if (i>0 and np.allclose(sn2i[1], perv1[1], atol=self.tol_ev)): 
+      #if (np.allclose(sn2i[1], perv1[1], atol=self.tol_ev)): 
       #  print('Int DN converged') 
  
-      #if (i>0 and np.allclose(sn2r[0], perv2[0], atol=self.tol_ev)): 
+      #if (np.allclose(sn2r[0], perv2[0], atol=self.tol_ev)): 
       #  print('Res UP converged')  
-      #if (i>0 and np.allclose(sn2r[1], perv2[1], atol=self.tol_ev)): 
+      #if (np.allclose(sn2r[1], perv2[1], atol=self.tol_ev)): 
       #  print('Res DN converged')    
-      #if (i>0 and states.shape == perv3.shape and np.allclose(states, perv3, atol=1e-02)): 
+      #if (states.shape == perv3.shape and np.allclose(states, perv3, atol=1e-02)): 
         #print('states inside cntour are identical')    
 
       perv1 = sn2i
