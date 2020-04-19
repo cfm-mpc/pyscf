@@ -1007,9 +1007,12 @@ class prod_basis:
 
             size = self.prod_log.sp2vertex[spp].size
             lv = self.prod_log.sp2vertex[spp].reshape(size)
+            
             (dd, aa, bb) = np.mgrid[sd:fd, s:f, s:f].reshape((3, size))
-            (irow[inz:inz + size], icol[inz:inz + size], data[inz:inz
-             + size]) = (dd, aa + bb * n, lv)
+            
+            irow[inz:inz + size] = dd
+            icol[inz:inz + size] = aa + bb*n
+            data[inz:inz + size] = lv
             inz += size
 
         for (sd, fd, pt, spp) in zip(dpc2s, dpc2s[1:], self.dpc2t,
@@ -1019,17 +1022,18 @@ class prod_basis:
             (inf, (a, b), size) = (self.bp2info[spp],
                                    self.bp2info[spp].atoms,
                                    self.bp2info[spp].vrtx.size)
+            
             (sa, fa, sb, fb) = (atom2s[a], atom2s[a + 1], atom2s[b],
                                 atom2s[b + 1])
-            (dd, aa, bb) = np.mgrid[sd:fd, sa:fa, sb:fb].reshape((3,
-                    size))
-            (irow[inz:inz + size], icol[inz:inz + size]) = (dd, aa + bb
-                    * n)
+
+            (dd, aa, bb) = np.mgrid[sd:fd, sa:fa, sb:fb].reshape((3, size))
+            irow[inz:inz + size] = dd
+            icol[inz:inz + size] = aa + bb*n
             data[inz:inz + size] = inf.vrtx.reshape(size)
             inz += size
 
-            (irow[inz:inz + size], icol[inz:inz + size]) = (dd, bb + aa
-                    * n)
+            irow[inz:inz + size] = dd
+            icol[inz:inz + size] = bb + aa*n
             data[inz:inz + size] = inf.vrtx.reshape(size)
             inz += size
 
@@ -1045,6 +1049,9 @@ class prod_basis:
 
         import numpy as np
         from scipy.sparse import csr_matrix, coo_matrix
+
+        # sum(abs(get_dp_vertex_sparse2().todense() - get_dp_vertex_array())) != 0
+        raise ValueError("get_dp_vertex_sparse2 does not provide the right data!!")
         nnz = self.get_dp_vertex_nnz()
         (irow, icol, data) = (np.zeros(nnz, dtype=np.int32),
                               np.zeros(nnz, dtype=np.int32),
@@ -1351,6 +1358,13 @@ def test():
     pab2v = pb.get_ac_vertex_array(matformat="dense")
     pab2v_sparse = pb.get_ac_vertex_array(matformat="sparse")
     print("diff pab2v: sparse - dense: ", np.sum(abs(pab2v_sparse.todense() - pab2v)))
+    pab2vdp = pb.get_dp_vertex_array()
+    shape = pab2vdp.shape
+    pab2vdp_sp1 = pb.get_dp_vertex_sparse().reshape(shape[0]*shape[1], shape[2])
+    print(shape)
+    print(pab2vdp_sp1.shape)
+    pab2vdp_sp2dense = np.asarray(pab2vdp_sp1.todense()).reshape(shape[0], shape[1], shape[2])
+    print("diff get_dp_vertex_sparse: ", np.sum(abs(pab2vdp - pab2vdp_sp2dense)))
     s_chk = np.einsum('pab,p->ab', pab2v, mom0)
     print(abs(s_chk - s_ref).sum() / s_chk.size, abs(s_chk
           - s_ref).max())

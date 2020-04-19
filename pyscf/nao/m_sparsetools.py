@@ -32,6 +32,10 @@ def count_nnz_spmat_denmat(csr, ncolB):
     return nnz
 
 def spmat_denmat(csr, B):
+    """
+    sparse matrix dense matrix multiplication directly giving a sparse matrix
+    in CSR format.
+    """
 
     if not sparse.isspmatrix_csr(csr):
         raise Exception("Matrix must be in csr format")
