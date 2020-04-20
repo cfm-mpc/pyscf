@@ -546,13 +546,11 @@ class gw_iter(gw):
     k_c_opt = LinearOperator((self.nprod,self.nprod),
                              matvec=self.gw_vext2veffmatvec,
                              dtype=self.dtypeComplex)
- 
-    states=np.array([])
-    x0 = None
+    prev_sol = None
     for s,ww in enumerate(sn2w):
       
         x = self.mo_coeff[0,s,:,:,0]
-        for nl,(n,w) in enumerate(zip(self.nn[s],ww)):
+        for nl,(n,w) in enumerate(zip(self.nn[s],ww)): #nl counter n state in nn, w energy
             lsos = self.lsofs_inside_contour(self.ksn2e[0,s,:],w,self.dw_excl)
             zww = array([pole[0] for pole in lsos])
 
@@ -570,25 +568,31 @@ class gw_iter(gw):
                 tt2 = timer()               
                 self.time_gw[15] += tt2 - tt1
                 a = np.dot(self.kernel_sq, b)
-
-                if self.use_initial_guess_ite_solver and nl > 0:
-                    x0 = prev_sol
-
                 si_xvx, exitCode = lgmres(k_c_opt, a, atol=self.gw_iter_tol,
-                                          maxiter=self.maxiter, x0 = x0)
+                                          maxiter=self.maxiter, x0 = prev_sol)
                 if exitCode != 0:
                     print("LGMRES has not achieved convergence: exitCode = {}".format(exitCode))
-                #if nl > 0: print('prev_sol ,si_xvx', (abs(prev_sol - si_xvx).sum()))
+
+                if self.use_initial_guess_ite_solver:
+                    #if nl > 0: print('prev_sol ,si_xvx', (abs(prev_sol - si_xvx).sum()))
+                    prev_sol = si_xvx
 
                 contr = np.dot(xvx, si_xvx)
                 sn2res[s][nl] += pole[2]*contr.real
-
-            if self.use_initial_guess_ite_solver:
-                prev_sol = si_xvx
-
     t2 = timer()
     self.time_gw[19] += t2 - t1    
     return sn2res
+
+
+  def gw_corr_res_states(self, sn2w):
+    """Collects a set of poles for a set of energy"""  
+    states=np.array([])
+    for s,ww in enumerate(sn2w):
+        for nl,(n,w) in enumerate(zip(self.nn[s],ww)):
+            lsos = self.lsofs_inside_contour(self.ksn2e[0,s,:],w,self.dw_excl)
+            stw = array([pole[1] for pole in lsos])
+            states = np.concatenate((states, stw), axis=0)   
+    return states
 
   def g0w0_eigvals_iter(self):
     """
@@ -619,6 +623,7 @@ class gw_iter(gw):
     perv2 = [np.zeros(len(self.nn[s])) for s in range(self.nspin)]
     sn2i_conv = False
     sn2r_conv = False
+    #perv3 = np.array([])
 
     for i in range(self.niter_max_ev):
 
@@ -627,32 +632,21 @@ class gw_iter(gw):
       if sn2r_conv:   sn2r = perv2
       else:           sn2r = self.gw_corr_res_iter(sn2eval_gw)
 
-
       if (all([np.allclose(x, y, atol = self.tol_ev) for x, y in zip(sn2i, perv1)])): 
         sn2i_conv = True      
-        print('Int converged') 
+        if (self.verbosity > 3): print('Integral part converged!') 
  
       if (all([np.allclose(x, y, atol = self.tol_ev) for x, y in zip(sn2r, perv2)])): 
         sn2r_conv = True
-        print('Res converged')
+        if (self.verbosity > 3): print('Residue part converged!')
 
-
-      #if (np.allclose(sn2i[0], perv1[0], atol=self.tol_ev)): 
-      #  print('Int UP converged') 
-      #if (np.allclose(sn2i[1], perv1[1], atol=self.tol_ev)): 
-      #  print('Int DN converged') 
- 
-      #if (np.allclose(sn2r[0], perv2[0], atol=self.tol_ev)): 
-      #  print('Res UP converged')  
-      #if (np.allclose(sn2r[1], perv2[1], atol=self.tol_ev)): 
-      #  print('Res DN converged')    
-      #if (states.shape == perv3.shape and np.allclose(states, perv3, atol=1e-02)): 
-        #print('states inside cntour are identical')    
-
+      #states = self.gw_corr_res_states(sn2eval_gw)
+      #if (self.verbosity > 3 and np.array_equal(states, perv3)): 
+      #  print('States inside contour are identical')
+    
       perv1 = sn2i
       perv2 = sn2r
       #perv3 = states
-
 
       sn2eval_gw = []
       for s,(evhf,n2i,n2r,nn) in enumerate(zip(self.h0_vh_x_expval,sn2i,sn2r,self.nn)):
