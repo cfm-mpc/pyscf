@@ -252,18 +252,11 @@ class gw(scf):
     snmw2sf = []
     for s in range(self.nspin):
       nmw2sf = zeros((len(self.nn[s]), self.norbs, self.nff_ia), dtype=self.dtype)
-      #nmw2sf = zeros((len(self.nn), self.norbs, self.nff_ia), dtype=self.dtype)
-
-      # n runs from s...f or states will be corrected:
-      # self.nn = [range(self.start_st[s], self.finish_st[s])
       xna = self.mo_coeff[0,s,self.nn[s],:,0]
-      #xna = self.mo_coeff[0,s,self.nn,:,0]
-
-      # m runs from 0...norbs
       xmb = self.mo_coeff[0,s,:,:,0]
-
-      # This calculates nmp2xvx= X^n V_mu X^m for each side
+      #This calculates nmp2xvx= X^n V_mu X^m for each side
       nmp2xvx = einsum('na,pab,mb->nmp', xna, v_pab, xmb, optimize=optimize)
+
       for iw,si0 in enumerate(wpq2si0):
         # This calculates nmp2xvx(outer loop)*real.W_mu_nu*nmp2xvx 
         nmw2sf[:,:,iw] = einsum('nmp,pq,nmq->nm', nmp2xvx, si0, nmp2xvx, optimize=optimize)

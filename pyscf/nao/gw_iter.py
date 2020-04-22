@@ -113,7 +113,7 @@ class gw_iter(gw):
         5- using dominant product basis
         6- using sparse dominant product basis
     """
-    self.time_gw[12] = timer();
+
     algol = algo.lower() if algo is not None else 'dp_coo'  
     print("gw_xvx algo: ", algol)
 
@@ -161,9 +161,8 @@ class gw_iter(gw):
             print('Spin {}, dominant product with ref: {}'.format(s+1,np.allclose(ref[s],self.gw_xvx(algo='dp')[s],atol=1e-15)))
             print('Spin {}, sparse_dominant product-ndCoo with ref: {}'.format(s+1,np.allclose(ref[s], self.gw_xvx(algo='dp_coo')[s], atol=1e-15)))
     else:
-      raise ValueError("Unknow algp {}".format(algol))
+      raise ValueError("Unknow algo {}".format(algol))
 
-    self.time_gw[13] = timer();
     return xvx
 
   def dupl_E (self, spin, thrs=None):
@@ -197,10 +196,11 @@ class gw_iter(gw):
     3- S_nm = XVX W XVX = XVX * I_nm
     """
 
-    from scipy.sparse.linalg import LinearOperator, lgmres
+    from scipy.sparse.linalg import LinearOperator, lgmres, spsolve
     self.time_gw[10] = timer();    
     ww = 1j*self.ww_ia
-    xvx = self.gw_xvx(self.gw_xvx_algo)
+
+    if not hasattr(self, 'xvx'): self.xvx = self.gw_xvx(self.gw_xvx_algo)
 
     snm2i = []
     # convert k_c as full matrix into Operator
@@ -236,7 +236,7 @@ class gw_iter(gw):
 
                     else:
                         # v XVX
-                        a = self.kernel_sq.dot(xvx[s][n,m,:])
+                        a = self.kernel_sq.dot(self.xvx[s][n,m,:])
                         
                         # \chi_{0}v XVX by using matrix vector
                         tt1 = timer()
@@ -251,7 +251,7 @@ class gw_iter(gw):
                         if ( self.limited_nbnd and m >= nbnd[s]):
                             sf_aux[n,m,:] = a
                             if self.verbosity > 3:
-                                print('m#{} LGMRS ignored, limited_nbnd'.format(m))
+                                print('m#{} skiped LGMRS, limited_nbnd'.format(m))
 
                         else:
 
@@ -281,7 +281,7 @@ class gw_iter(gw):
             self.ncall_chi0_mv_total += self.ncall_chi0_mv_ite
 
             # I = XVX I_aux
-            inm[:,:,iw] = np.einsum('nmp,nmp->nm', xvx[s], sf_aux, optimize=optimize)
+            inm[:,:,iw] = np.einsum('nmp,nmp->nm', self.xvx[s], sf_aux, optimize=optimize)
         snm2i.append(np.real(inm))
 
     print("Total call chi0_mv: ", self.ncall_chi0_mv_total)
@@ -422,7 +422,7 @@ class gw_iter(gw):
     
     from scipy.sparse.linalg import lgmres, LinearOperator
 
-    xvx = self.gw_xvx(self.gw_xvx_algo)
+    if not hasattr(self, 'xvx'): self.xvx = self.gw_xvx(self.gw_xvx_algo)
 
 
     t1 = timer()
@@ -440,14 +440,14 @@ class gw_iter(gw):
             lsos = self.lsofs_inside_contour(self.ksn2e[0, spin ,:], w, self.dw_excl)
             zww = np.array([pole[0] for pole in lsos])
             if self.verbosity > 3:
-                stw = array([pole[1] for pole in lsos])
+                stw = np.array([pole[1] for pole in lsos])
                 print('states located inside contour: #',stw)
             #xv = v_pab.dot(x[n])
 
             for pole, z_real in zip(lsos, zww):
                 self.comega_current = z_real
                 #xvx = xv.dot(x[pole[1]])
-                a = self.kernel_sq.dot(xvx[spin][nl, pole[1], :])
+                a = self.kernel_sq.dot(self.xvx[spin][nl, pole[1], :])
                 tt1 = timer()
                 b = self.chi0_mv(a, self.comega_current)
                 tt2 = timer()               
@@ -463,7 +463,7 @@ class gw_iter(gw):
                     #if nl > 0: print('prev_sol ,si_xvx', (abs(prev_sol - si_xvx).sum()))
                     prev_sol = si_xvx
 
-                contr = xvx[spin][nl, pole[1], :].dot(si_xvx)
+                contr = self.xvx[spin][nl, pole[1], :].dot(si_xvx)
                 sn2res[spin][nl] += pole[2]*contr.real
 
     t2 = timer()
@@ -525,7 +525,7 @@ class gw_iter(gw):
  
       if (all([np.allclose(x, y, atol = self.tol_ev) for x, y in zip(sn2r, perv2)])): 
         sn2r_conv = True
-        if (self.verbosity > 3): print('Residue part converged!')
+        if (self.verbosity > 3): print('Residual part converged!')
 
       #states = self.gw_corr_res_states(sn2eval_gw)
       #if (self.verbosity > 3 and np.array_equal(states, perv3)): 
@@ -582,6 +582,10 @@ class gw_iter(gw):
     self.time_gw[8] = timer();      
     if not hasattr(self,'sn2eval_gw'): self.sn2eval_gw=self.g0w0_eigvals_iter() # Comp. GW-corrections
     self.time_gw[9] = timer();
+
+    self.time_gw[12] = timer();
+    if not hasattr(self, 'xvx'): self.xvx = self.gw_xvx(self.gw_xvx_algo)
+    self.time_gw[13] = timer();
 
     # Update mo_energy_gw, mo_coeff_gw after the computation is done
     self.mo_energy_gw = np.copy(self.mo_energy)
