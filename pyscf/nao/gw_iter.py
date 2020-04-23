@@ -115,7 +115,7 @@ class gw_iter(gw):
         6- using sparse dominant product basis
     """
 
-    algol = algo.lower() if algo is not None else 'dp_coo'  
+    algol = algo.lower() if algo is not None else 'ac_blas'  
     print("gw_xvx algo: ", algol)
 
     # 1-direct multiplication with np and einsum
@@ -149,18 +149,17 @@ class gw_iter(gw):
         xvx = gw_xvx_dp(self)
 
     # 6-dominant product basis with scipy sparse COO format
+    elif algol=='dp_coo':
+
+        from pyscf.nao.m_gw_xvx import gw_xvx_dp_ndcoo
+        xvx = gw_xvx_dp_ndcoo(self)
+
+    # 7-using sparcity of dominant product basis and Numba library
     elif algol=='dp_sparse':
 
         from pyscf.nao.m_gw_xvx import gw_xvx_dp_sparse
         xvx = gw_xvx_dp_sparse(self)
 
-    elif algol=='check':
-        ref = self.gw_xvx(algo='simple')
-        for s in range(self.nspin):
-            print('Spin {}, atom-centered with ref: {}'.format(s+1,np.allclose(ref[s],self.gw_xvx(algo='ac')[s],atol=1e-15)))
-            print('Spin {}, atom-centered (BLAS) with ref: {}'.format(s+1,np.allclose(ref[s],self.gw_xvx(algo='blas')[s],atol=1e-15)))
-            print('Spin {}, dominant product with ref: {}'.format(s+1,np.allclose(ref[s],self.gw_xvx(algo='dp')[s],atol=1e-15)))
-            print('Spin {}, sparse_dominant product-ndCoo with ref: {}'.format(s+1,np.allclose(ref[s], self.gw_xvx(algo='dp_coo')[s], atol=1e-15)))
     else:
       raise ValueError("Unknow algo {}".format(algol))
 
@@ -186,7 +185,7 @@ class gw_iter(gw):
     from scipy.sparse import csc_matrix
     import scipy.sparse.linalg as spla 
 
-    omega = 1j*20.0 if omega is None else omega
+    omega = 1j*10.0 if omega is None else omega
 
     #rf0 = self.rf0(ww = [omega])
     #veff = np.ones(self.nprod, dtype=self.dtypeComplex)
