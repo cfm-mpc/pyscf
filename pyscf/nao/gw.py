@@ -538,3 +538,5 @@ class gw(scf):
     write_rst_h5py (value='QP_energies_Ha', data=self.mo_energy_gw)
     write_rst_h5py (value='correct_order' , data=self.argsort)
     write_rst_h5py (value='G0W0_eigenfuns', data=self.mo_coeff_gw)
+    write_rst_h5py (value='K_matrix', data=self.kmat)
+    write_rst_h5py (value='J_matrix', data=self.jmat)

@@ -53,6 +53,7 @@ class gw_iter(gw):
     self.h0_vh_x_expval = self.get_h0_vh_x_expval()
     self.ncall_chi0_mv_ite = 0
     self.ncall_chi0_mv_total = 0
+    self.lgmres_time_per_step = []
 
     # Store the ac product basis if necessary (ac_sparse)
     self.v_pab = None
@@ -181,6 +182,33 @@ class gw_iter(gw):
         dup.append(x+1)
     return dup
 
+  def precond_lgmres (self, omega=None):
+    from scipy.sparse import csc_matrix
+    import scipy.sparse.linalg as spla 
+
+    omega = 1j*20.0 if omega is None else omega
+
+    #rf0 = self.rf0(ww = [omega])
+    #veff = np.ones(self.nprod, dtype=self.dtypeComplex)
+    #vX = np.dot(rf0[0], veff)
+    
+    v =np.ones(self.nprod, dtype=self.dtypeComplex)                           
+    vX = self.chi0_mv (v, comega=omega)
+    
+    vX2 = 1 - vX  
+
+    l = np.zeros((self.nprod,self.nprod), dtype=self.dtypeComplex) 
+    for i in range(self.nprod): 
+        l [i,i] = vX2 [i]
+
+    #from numpy.linalg import inv
+    #M=inv(l)
+    l = csc_matrix (l)
+    M_x = lambda x: spla.spsolve(l, x) 
+    M = spla.LinearOperator((self.nprod, self.nprod), M_x)
+    return M
+    
+
   def get_snmw2sf_iter(self, nbnd=None, optimize="greedy"):
     """ 
     This computes a matrix elements of W_c:
@@ -211,6 +239,7 @@ class gw_iter(gw):
     # preconditioning could be using 1- kernel
     # not sure ...
     x0 = None
+    M0 = self.precond_lgmres ()
     for s in range(self.nspin):
         sf_aux = np.zeros((len(self.nn[s]), self.norbs, self.nprod), dtype=self.dtypeComplex)
         inm = np.zeros((len(self.nn[s]), self.norbs, len(ww)), dtype=self.dtypeComplex)
@@ -219,10 +248,11 @@ class gw_iter(gw):
         # w is complex plane
         for iw, w in enumerate(ww):
             self.comega_current = w
+            #M0 = self.precond_lgmres (w)
 
             self.ncall_chi0_mv_ite = 0
             if self.verbosity>3:
-                print("freq: {}; nn = {}; norbs = {}".format(iw, len(self.nn[s]),
+                print("spin: {}; freq: {}; nn = {}; norbs = {}".format(s, iw, len(self.nn[s]),
                                                              self.norbs))
 
             t1 = timer()
@@ -264,7 +294,7 @@ class gw_iter(gw):
                             sf_aux[n,m,:], exitCode = lgmres(k_c_opt, a,
                                                              atol=self.gw_iter_tol,
                                                              maxiter=self.maxiter,
-                                                             x0=x0)
+                                                             x0=x0, M=M0)
                             if exitCode != 0:
                               print("LGMRES has not achieved convergence: exitCode = {}".format(exitCode))
                 
@@ -275,6 +305,7 @@ class gw_iter(gw):
 
             if self.verbosity>3:
                 print("time for lgmres loop: ", round(t2-t1,2))
+                self.lgmres_time_per_step.append(round(t2-t1,2))
                 print("number call chi0_mv:  ", self.ncall_chi0_mv_ite)
                 print("Average call chi0_mv: ", self.ncall_chi0_mv_ite/(len(self.nn[s])*self.norbs))
 
@@ -433,6 +464,7 @@ class gw_iter(gw):
                              dtype=self.dtypeComplex)
 
     prev_sol = None
+    M0 = self.precond_lgmres ()
     for spin, ww in enumerate(sn2w):
       
         #x = self.mo_coeff[0, spin, :, :, 0]
@@ -441,11 +473,12 @@ class gw_iter(gw):
             zww = np.array([pole[0] for pole in lsos])
             if self.verbosity > 3:
                 stw = np.array([pole[1] for pole in lsos])
-                print('states located inside contour: #',stw)
+                print('spin {}, states located inside contour: {}'.format(s,str(stw)))
             #xv = v_pab.dot(x[n])
 
             for pole, z_real in zip(lsos, zww):
                 self.comega_current = z_real
+                #M0 = self.precond_lgmres (z_real)
                 #xvx = xv.dot(x[pole[1]])
                 a = self.kernel_sq.dot(self.xvx[spin][nl, pole[1], :])
                 tt1 = timer()
@@ -455,7 +488,7 @@ class gw_iter(gw):
                 a = self.kernel_sq.dot(b)
 
                 si_xvx, exitCode = lgmres(k_c_opt, a, atol=self.gw_iter_tol,
-                                          maxiter=self.maxiter, x0 = prev_sol)
+                                          maxiter=self.maxiter)#, x0 = prev_sol, M=M0)
                 if exitCode != 0:
                     print("LGMRES has not achieved convergence: exitCode = {}".format(exitCode))
 
