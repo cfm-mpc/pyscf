@@ -213,118 +213,87 @@ class tddft_iter(chi0_matvec):
 
         return vcre[0].reshape(-1),vcre[1].reshape(-1)
 
+    def comp_polariz_nonin_xx(self, comegas, tmp_fname=None):
+        """
+        Compute the non-interacting polarizability along the xx direction
+        """
+        self.dn0, self.p0_mat = \
+                self.comp_dens_along_Eext(comegas,
+                                          Eext=np.array([1.0, 0.0, 0.0]),
+                                          tmp_fname=tmp_fname,
+                                          inter=False)
+        return self.p0_mat[0, 0, :]
 
     def comp_polariz_inter_xx(self, comegas, tmp_fname=None):
         """
         Compute the interacting polarizability along the xx direction
         """
-        self.comp_dens_inter_along_Eext(comegas, Eext=np.array([1.0, 0.0, 0.0]),
-                                        tmp_fname=tmp_fname)
+        self.dn, self.p_mat = \
+                self.comp_dens_along_Eext(comegas,
+                                          Eext=np.array([1.0, 0.0, 0.0]),
+                                          tmp_fname=tmp_fname,
+                                          inter=True)
         return self.p_mat[0, 0, :]
+
+    def comp_polariz_nonin_ave(self, comegas, tmp_fname=None):
+        """
+        Compute average interacting polarizability
+        """
+
+        self.dn0, self.p0_mat = \
+                self.comp_dens_along_Eext(comegas,
+                                          Eext=np.array([1.0, 1.0, 1.0]),
+                                          tmp_fname=tmp_fname,
+                                          inter=False)
+
+        Pavg = np.zeros((self.p0_mat.shape[2]), dtype=self.dtypeComplex)
+        for i in range(3):
+            Pavg[:] += self.p0_mat[i, i, :]
+
+        return Pavg/3
 
     def comp_polariz_inter_ave(self, comegas, tmp_fname=None):
         """
         Compute average interacting polarizability
         """
 
-        self.comp_dens_inter_along_Eext(comegas, Eext=np.array([1.0, 1.0, 1.0]),
-                                        tmp_fname=tmp_fname)
+        self.dn, self.p_mat = \
+                self.comp_dens_along_Eext(comegas,
+                                          Eext=np.array([1.0, 1.0, 1.0]),
+                                          tmp_fname=tmp_fname,
+                                          inter=True)
 
         Pavg = np.zeros((self.p_mat.shape[2]), dtype=self.dtypeComplex)
         for i in range(3):
             Pavg[:] += self.p_mat[i, i, :]
 
         return Pavg/3
-
     polariz_inter_ave = comp_polariz_inter_ave
-  
-    def comp_dens_inter_along_Eext(self, comegas, Eext=np.array([1.0, 0.0, 0.0]),
-                                   tmp_fname=None):
-        """ 
-        Compute a the average interacting polarizability along the Eext direction
-        for the frequencies comegas.
-        
-        Input Parameters:
-            comegas (1D array, complex): the real part contains the frequencies at which the polarizability
-                        should be computed. The imaginary part id the width of the polarizability define as self.eps
-            Eext (1D xyz array, real): direction of the external field
-            maxiter (integer): max number of iteration before to exit iteration loop in GMRES
-        
-        Other Calculated quantity:
-            self.p_mat (complex array, dim: [3, 3, comega.size]): store the (3, 3) polarizability matrix 
-                                [[Pxx, Pxy, Pxz],
-                                 [Pyx, Pyy, Pyz],
-                                 [Pzx, Pzy, Pzz]] for each frequency.
-            self.dn (complex array, dim: [3, comegas.size, self.nprod]): store the density change
+
+    def comp_polariz_nonin_Edir(self, comegas, Eext=np.array([1.0, 1.0, 1.0]),
+                                tmp_fname=None):
+        """
+        Compute average interacting polarizability
         """
 
-        if tmp_fname is not None:
-            if not isinstance(tmp_fname, str):
-                raise ValueError("tmp_fname must be a string")
-            else:
-                tmp_re = open(tmp_fname+".real", "w")
-                tmp_re.write("# All atomic units\n")
-                tmp_re.write("# w (Ha)    Pxx    Pxy    Pxz    Pyx    Pyy    Pyz    Pzx    Pzy    Pzz\n")
-            
-                tmp_im = open(tmp_fname+".imag", "w")
-                tmp_im.write("# All atomic units\n")
-                tmp_im.write("# w    Pxx    Pxy    Pxz    Pyx    Pyy    Pyz    Pzx    Pzy    Pzz\n")
+        self.dn0, self.p0_mat = \
+                self.comp_dens_along_Eext(comegas,
+                                          Eext=np.array([1.0, 1.0, 1.0]),
+                                          tmp_fname=tmp_fname,
+                                          inter=False)
 
-        if isinstance(Eext, list):
-            Eext = np.array(Eext.size)
+        return self.p0_mat
 
-        assert Eext.size == 3
-        
-        nww = len(comegas)
-        self.p_mat = np.zeros((3, 3, nww), dtype=self.dtypeComplex)
-        self.dn = np.zeros((3, nww, self.nprod), dtype=self.dtypeComplex)
-        Edir = Eext/np.dot(Eext, Eext)
-    
-        vext = np.transpose(self.moms1)
-        for iw, comega in enumerate(comegas):
-
-            self.dn[:, iw, :], self.p_mat[:, :, iw] = \
-                    self.calc_dens_inter_Edir_omega(iw, nww, comega, vext, Edir,
-                                                    tmp_fname=tmp_fname)
-               
-    def calc_dens_inter_Edir_omega(self, iw, nww, w, vext, Edir, tmp_fname=None):
+    def comp_polariz_inter_Edir(self, comegas, Eext=np.array([1.0, 1.0, 1.0]),
+                                tmp_fname=None):
         """
-        Calculate the density change and polarizability for a specific frequency
+        Compute average interacting polarizability
         """
 
-        Pmat = np.zeros((3, 3), dtype=self.dtypeComplex)
-        dn = np.zeros((3, self.nprod), dtype=self.dtypeComplex)
-        eV = 27.211386024367243
+        self.dn, self.p_mat = \
+                self.comp_dens_along_Eext(comegas,
+                                          Eext=np.array([1.0, 1.0, 1.0]),
+                                          tmp_fname=tmp_fname,
+                                          inter=True)
 
-        for xyz, Exyz in enumerate(Edir):
-            if abs(Exyz) < 1.0e-12:
-                continue
-
-            if self.verbosity > 1:
-                print("dir: {0}, iw: {1}/{2}; w: {3:.4f}".format(xyz, iw, nww,
-                                                                 w.real*eV))
-            veff = self.comp_veff(vext[xyz], w)
-            dn[xyz, :] = self.apply_rf0(veff, w)
-            for xyzp in range(Edir.size):
-                Pmat[xyz, xyzp] = vext[xyzp].dot(dn[xyz, :])
-
-        if tmp_fname is not None:
-            tmp_re = open(tmp_fname + ".real", "a")
-            tmp_re.write("{0:.6e}   ".format(w.real))
-
-            tmp_im = open(tmp_fname + ".imag", "a")
-            tmp_im.write("{0:.6e}   ".format(w.real))
-        
-            for i in range(3):
-                for j in range(3):
-                    tmp_re.write("{0:.6e}    ".format(Pmat[i, j].real))
-                    tmp_im.write("{0:.6e}    ".format(Pmat[i, j].imag))
-            tmp_re.write("\n")
-            tmp_im.write("\n")
-            tmp_re.close()
-            tmp_im.close()
-            # Need to open and close the file at every freq, otherwise
-            # tmp is written only at the end of the calculations, therefore,
-            # it is useless
-
-        return dn, Pmat
+        return self.p_mat
