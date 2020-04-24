@@ -5,7 +5,7 @@ from timeit import default_timer as timer
 def gw_xvx_ac_simple(self):
     """
     Simple metod to calculate basis product using atom-centered product
-    basis: V_{\mu}^{ab}
+    basis: V_{mu}^{ab}
 
     This method is used as reference.
     direct multiplication with np and einsum
@@ -35,7 +35,7 @@ def gw_xvx_ac_simple(self):
 def gw_xvx_ac(self):
     """
     metod to calculate basis product using atom-centered product
-    basis: V_{\mu}^{ab}
+    basis: V_{mu}^{ab}
     """
 
     xvx = []
@@ -71,7 +71,7 @@ def gw_xvx_ac(self):
 def gw_xvx_ac_blas(self):
     """
     Metod to calculate basis product using atom-centered product
-    basis: V_{\mu}^{ab}
+    basis: V_{mu}^{ab}
 
     Use Blas to handle matrix-matrix multiplications
     """
@@ -93,7 +93,7 @@ def gw_xvx_ac_blas(self):
 def gw_xvx_ac_sparse(self):
     """
     Metod to calculate basis product using atom-centered product
-    basis: V_{\mu}^{ab}
+    basis: V_{mu}^{ab}
 
     Use a sparse version of the atom-centered product, allow calculations
     of larger systems, however, the computational cost to get the sparse
@@ -127,7 +127,7 @@ def gw_xvx_ac_sparse(self):
 
 def gw_xvx_dp(self):
     """
-    Metod to calculate basis product using dominant product basis V_{\mu}^{ab}
+    Metod to calculate basis product using dominant product basis V_{mu}^{ab}
     """
 
     xvx = []
@@ -170,7 +170,7 @@ def gw_xvx_dp(self):
 
 def gw_xvx_dp_sparse(self):
     """
-    Method to calculate basis product using dominant product basis V_{\mu}^{ab}
+    Method to calculate basis product using dominant product basis V_{mu}^{ab}
 
     Take advantages of the sparsity of the dominant product basis.
     Numba library must be installed
