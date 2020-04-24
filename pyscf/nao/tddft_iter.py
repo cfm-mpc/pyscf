@@ -145,9 +145,10 @@ class tddft_iter(chi0_matvec):
         from scipy.sparse.linalg import LinearOperator, lgmres
         nsp = self.nspin*self.nprod
 
-        assert len(vext)==nsp, "{} {}".format(len(vext), nsp)
+        assert len(vext) == nsp, "{} {}".format(len(vext), nsp)
         self.comega_current = comega
-        veff_op = LinearOperator((nsp,nsp), matvec=self.vext2veff_matvec, dtype=self.dtypeComplex)
+        veff_op = LinearOperator((nsp,nsp), matvec=self.vext2veff_matvec,
+                                 dtype=self.dtypeComplex)
 
         if self.res_method == "absolute":
             tol = 0.0

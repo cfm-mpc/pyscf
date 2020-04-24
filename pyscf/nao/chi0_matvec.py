@@ -195,14 +195,19 @@ class chi0_matvec(mf):
         
         nww = len(comegas)
         p_mat = np.zeros((3, 3, nww), dtype=self.dtypeComplex)
-        dn = np.zeros((3, nww, self.nprod), dtype=self.dtypeComplex)
+        dn = np.zeros((3, nww, self.nspin*self.nprod), dtype=self.dtypeComplex)
         Edir = Eext/np.dot(Eext, Eext)
     
-        vext = np.transpose(self.moms1)
+        print("self.moms1: ", self.moms1.shape)
+        print("nspin, norbs: ", self.nspin, self.nprod)
+        vext = np.zeros((self.nspin*self.nprod, 3), dtype=self.moms1.dtype)
+        for ixyz in range(3):
+            vext[:, ixyz] = np.concatenate([self.moms1[:, ixyz] for s in range(self.nspin)])
+
         for iw, comega in enumerate(comegas):
 
             dn[:, iw, :], p_mat[:, :, iw] = \
-                    self.calc_dens_Edir_omega(iw, nww, comega, vext, Edir,
+                    self.calc_dens_Edir_omega(iw, nww, comega, Edir, vext,
                                               tmp_fname=tmp_fname, inter=inter)
 
         if inter:
@@ -212,14 +217,14 @@ class chi0_matvec(mf):
         self.write_chi0_mv_timing(fname)
         return dn, p_mat
         
-    def calc_dens_Edir_omega(self, iw, nww, w, vext, Edir, tmp_fname=None,
+    def calc_dens_Edir_omega(self, iw, nww, w, Edir, vext, tmp_fname=None,
                              inter=False):
         """
         Calculate the density change and polarizability for a specific frequency
         """
 
         Pmat = np.zeros((3, 3), dtype=self.dtypeComplex)
-        dn = np.zeros((3, self.nprod), dtype=self.dtypeComplex)
+        dn = np.zeros((3, self.nspin*self.nprod), dtype=self.dtypeComplex)
         eV = 27.211386024367243
 
         for xyz, Exyz in enumerate(Edir):
@@ -230,13 +235,13 @@ class chi0_matvec(mf):
                 print("dir: {0}, iw: {1}/{2}; w: {3:.4f}".format(xyz, iw, nww,
                                                                  w.real*eV))
             if inter:
-                veff = self.comp_veff(vext[xyz], w)
+                veff = self.comp_veff(vext[:, xyz], w)
                 dn[xyz, :] = self.apply_rf0(veff, w)
             else:
-                dn[xyz, :] = self.apply_rf0(vext[xyz], w)
+                dn[xyz, :] = self.apply_rf0(vext[:, xyz], w)
 
             for xyzp in range(Edir.size):
-                Pmat[xyz, xyzp] = vext[xyzp].dot(dn[xyz, :])
+                Pmat[xyz, xyzp] = vext[:, xyzp].dot(dn[xyz, :])
 
         if tmp_fname is not None:
             tmp_re = open(tmp_fname + ".real", "a")
