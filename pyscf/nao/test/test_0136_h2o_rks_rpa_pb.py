@@ -27,7 +27,7 @@ class KnowValues(unittest.TestCase):
     gto_mf.kernel()
     nao_mf = tddft_iter(gto=mol, mf=gto_mf, xc_code="RPA", tol_loc=1e-5, tol_biloc=1e-7)
     comega = np.arange(0.0, 2.0, 0.01) + 1j*0.03
-    pol = -nao_mf.comp_polariz_inter_ave(comega, verbosity=0).imag
+    pol = -nao_mf.comp_polariz_inter_ave(comega).imag
     data = np.array([comega.real*HARTREE2EV, pol])
     np.savetxt('test_136_h2o_rks_rpa_pb.txt', data.T, fmt=['%f','%f'])
     data_ref = np.loadtxt('test_136_h2o_rks_rpa_pb.txt-ref').T
