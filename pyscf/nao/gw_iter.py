@@ -182,26 +182,23 @@ class gw_iter(gw):
     return dup
 
   def precond_lgmres (self, omega=None):
+    """
+    For a simple V_eff, this calculates linear operator of M = (1-chi_0(omega) = kc_opt)^-1, 
+    as a preconditioner for lgmres
+    """
     from scipy.sparse import csc_matrix
     import scipy.sparse.linalg as spla 
 
-    omega = 1j*10.0 if omega is None else omega
-
-    #rf0 = self.rf0(ww = [omega])
-    #veff = np.ones(self.nprod, dtype=self.dtypeComplex)
-    #vX = np.dot(rf0[0], veff)
-    
+    omega = 1j*10.0
     v =np.ones(self.nprod, dtype=self.dtypeComplex)                           
     vX = self.chi0_mv (v, comega=omega)
     
-    vX2 = 1 - vX  
+    vX2 = 1 - vX.real  
+    l = np.zeros((self.nprod,self.nprod), dtype=self.dtype) 
+    np.fill_diagonal(l, vX2)
 
-    l = np.zeros((self.nprod,self.nprod), dtype=self.dtypeComplex) 
-    for i in range(self.nprod): 
-        l [i,i] = vX2 [i]
-
-    #from numpy.linalg import inv
-    #M=inv(l)
+    #from numpy.linalg import pinv
+    #M=pinv(l)
     l = csc_matrix (l)
     M_x = lambda x: spla.spsolve(l, x) 
     M = spla.LinearOperator((self.nprod, self.nprod), M_x)
@@ -251,7 +248,7 @@ class gw_iter(gw):
 
             self.ncall_chi0_mv_ite = 0
             if self.verbosity>3:
-                print("spin: {}; freq: {}; nn = {}; norbs = {}".format(s, iw, len(self.nn[s]),
+                print("spin: {}; freq: {}; nn = {}; norbs = {}".format(s+1, iw, len(self.nn[s]),
                                                              self.norbs))
 
             t1 = timer()
@@ -306,7 +303,7 @@ class gw_iter(gw):
                 print("time for lgmres loop: ", round(t2-t1,2))
                 self.lgmres_time_per_step.append(round(t2-t1,2))
                 print("number call chi0_mv:  ", self.ncall_chi0_mv_ite)
-                print("Average call chi0_mv: ", self.ncall_chi0_mv_ite/(len(self.nn[s])*self.norbs))
+                print("Average call chi0_mv: ", int(self.ncall_chi0_mv_ite/(len(self.nn[s])*self.norbs)))
 
             self.ncall_chi0_mv_total += self.ncall_chi0_mv_ite
 
@@ -316,6 +313,10 @@ class gw_iter(gw):
 
     print("Total call chi0_mv: ", self.ncall_chi0_mv_total)
     self.time_gw[11] = timer();
+
+    if self.write_R:
+        from pyscf.nao.m_restart import write_rst_h5py
+        write_rst_h5py (value='screened_interactions', data=snm2i)
     return snm2i
 
 
@@ -323,7 +324,7 @@ class gw_iter(gw):
     t1 = timer()
     dn0 = self.chi0_mv(vin, self.comega_current)
     t2 = timer()               
-    self.time_gw[15] += t2 - t1
+    self.time_gw[23] += t2 - t1
     vcre, vcim = self.gw_applykernel_nspin1(dn0)
     return vin - (vcre + 1.0j*vcim)         #1 - v\chi_0
 
@@ -472,7 +473,7 @@ class gw_iter(gw):
             zww = np.array([pole[0] for pole in lsos])
             if self.verbosity > 3:
                 stw = np.array([pole[1] for pole in lsos])
-                print('spin {}, states located inside contour: {}'.format(s,str(stw)))
+                print('spin {}, states located inside contour: {}'.format(spin ,str(stw)))
             #xv = v_pab.dot(x[n])
 
             for pole, z_real in zip(lsos, zww):
@@ -483,7 +484,7 @@ class gw_iter(gw):
                 tt1 = timer()
                 b = self.chi0_mv(a, self.comega_current)
                 tt2 = timer()               
-                self.time_gw[15] += tt2 - tt1
+                self.time_gw[21] += tt2 - tt1
                 a = self.kernel_sq.dot(b)
 
                 si_xvx, exitCode = lgmres(k_c_opt, a, atol=self.gw_iter_tol,
@@ -517,7 +518,7 @@ class gw_iter(gw):
     """
     This computes the G0W0 corrections to the eigenvalues
     """
-
+    self.time_gw[8] = timer(); 
     #self.ksn2e = self.mo_energy
     sn2eval_gw = [np.copy(self.ksn2e[0,s,nn]) for s,nn in enumerate(self.nn) ]
     sn2eval_gw_prev = copy.copy(sn2eval_gw)
@@ -598,7 +599,8 @@ class gw_iter(gw):
           print('='*28,
                 ' |  TAKE CARE! Convergence to tolerance {} not achieved after {}-iterations  | '.format(self.tol_ev,self.niter_max_ev),
                 '='*28,'\n')
-    
+
+    self.time_gw[9] = timer();    
     return sn2eval_gw
 
   #@profile  
@@ -611,20 +613,21 @@ class gw_iter(gw):
     self.time_gw[3] = timer();
     if self.verbosity>2: self.report_mf()
 
-    self.time_gw[8] = timer();      
-    if not hasattr(self,'sn2eval_gw'): self.sn2eval_gw=self.g0w0_eigvals_iter() # Comp. GW-corrections
-    self.time_gw[9] = timer();
-
     self.time_gw[12] = timer();
     if not hasattr(self, 'xvx'): self.xvx = self.gw_xvx(self.gw_xvx_algo)
     self.time_gw[13] = timer();
+
+     
+    if not hasattr(self,'sn2eval_gw'): self.sn2eval_gw=self.g0w0_eigvals_iter() # Comp. GW-corrections
+
+
 
     # Update mo_energy_gw, mo_coeff_gw after the computation is done
     self.mo_energy_gw = np.copy(self.mo_energy)
     self.mo_coeff_gw = np.copy(self.mo_coeff)
     self.argsort = []
 
-    self.time_gw[20] = timer();
+    self.time_gw[24] = timer();
     for s,nn in enumerate(self.nn):
       
       self.mo_energy_gw[0,s,nn] = self.sn2eval_gw[s]
@@ -648,7 +651,7 @@ class gw_iter(gw):
       self.mo_energy_gw[0,s,:] = np.sort(self.mo_energy_gw[0,s,:])
       for n,m in enumerate(argsrt): self.mo_coeff_gw[0,s,n] = self.mo_coeff[0,s,m]
  
-    self.time_gw[21] = timer();
+    self.time_gw[25] = timer();
     self.xc_code = 'GW'
     if self.verbosity>4:
       print(__name__,'\t\t====> Performed xc_code: {}\n '.format(self.xc_code))

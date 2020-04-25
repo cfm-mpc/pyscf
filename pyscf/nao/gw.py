@@ -32,7 +32,7 @@ class gw(scf):
     # how to exclude from the input the dtype and xc_code ?
 
     self.start_time = time.time()
-    self.time_gw = np.zeros(24)
+    self.time_gw = np.zeros(28)
     self.time_gw[0] = timer();
     
     scf.__init__(self, **kw)
@@ -445,7 +445,7 @@ class gw(scf):
     self.mo_coeff_gw = np.copy(self.mo_coeff)
     self.argsort = []
 
-    self.time_gw[20] = timer();
+    self.time_gw[24] = timer();
     for s,nn in enumerate(self.nn):
       self.mo_energy_gw[0,s,nn] = self.sn2eval_gw[s]
       nn_occ = [n for n in nn if n<self.nocc_0t[s]]
@@ -467,7 +467,7 @@ class gw(scf):
       self.mo_energy_gw[0,s,:] = np.sort(self.mo_energy_gw[0,s,:])
       for n,m in enumerate(argsrt): self.mo_coeff_gw[0,s,n] = self.mo_coeff[0,s,m]
  
-    self.time_gw[21] = timer();
+    self.time_gw[25] = timer();
     self.xc_code = 'GW'
     if self.verbosity>4:
       print(__name__,'\t\t====> Performed xc_code: {}\n '.format(self.xc_code))
@@ -482,7 +482,7 @@ class gw(scf):
   
 
   def etot_gw(self):
-    self.time_gw[22] = timer();
+    self.time_gw[26] = timer();
     dm1 = self.make_rdm1()
     ecore = (self.get_hcore()*dm1[0,...,0]).sum()
     
@@ -500,7 +500,7 @@ class gw(scf):
         ecorr -= 0.5*m2occ[m]*(n2egw[n]-m2emf[m])
     
     self.etot_gw = etot+ecorr+self.energy_nuc()
-    self.time_gw[23] = timer();
+    self.time_gw[27] = timer();
     return self.etot_gw
     
   def spin_square(self):
@@ -533,7 +533,7 @@ class gw(scf):
   def write_data(self):
     "writes data in RESTART'hdf5' format"
     from pyscf.nao.m_restart import write_rst_h5py
-    write_rst_h5py (value='screened_interactions', data=self.snmw2sf)
+    write_rst_h5py (value='screened_interactions_f', data=self.snmw2sf)
     write_rst_h5py (value='MF_energies_Ha', data=self.mo_energy)
     write_rst_h5py (value='QP_energies_Ha', data=self.mo_energy_gw)
     write_rst_h5py (value='correct_order' , data=self.argsort)

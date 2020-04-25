@@ -64,10 +64,14 @@ def report_gw (self):
                 print('Energy-sorted MO indices: \t {}'.format(swap))                
                 out_file.write('\nEnergy-sorted MO indices: \t {}'.format(swap))
 
-        print('\n=====| Timings of main algorithms |=====')
-        report_gw_t(self)
+        out_file.write('\n=====| Timings of main algorithms |=====')
+        timing, steps = report_gw_t(self)
+
+        for i in zip(timing, steps):     
+            if (round(i[0],3) != 0): out_file.write('\n{:20.19s}:{:14.2f} secs'.format(i[1],i[0]))
+
         elapsed_time = self.time_gw[-1]-self.time_gw[0]
-        out_file.write('\nTotal spent time :{:14.2f} secs'.format (elapsed_time))
+        out_file.write('\n'+'-'*20+'\nTotal spent time    :{:14.2f} secs\n'.format (elapsed_time))
         finish_t =  elapsed_time + self.start_time
         print('\nJOB DONE! \t {}'.format(time.strftime("%c", time.localtime(finish_t))))
         out_file.write('\nJOB DONE! \t {}'.format(time.strftime("%c", time.localtime(finish_t))))
@@ -213,15 +217,18 @@ def report_gw_t(self):
              'get_h0_vh_x_expval',' 1-get_K', ' 2-get_J',#23-45-67
              'G0W0_eigvals','  1-snmw2sf','   1-1-XVX','   1-2-chi_0', #89-1011-1213-1415
                             '  2-corr_int_tot',        #1617
-                            '  3-corr_res_tot',        #1819
-             'scissor',                                #2021
-             'etot_gw']                                #2223
+                            '  3-corr_res_tot','   3-1-chi_0',        #1819-2021
+                            '  4-veffmatvec',          #2223
+             'scissor',                                #2425
+             'etot_gw']                                #2627
 
     timing = list(self.time_gw[1::2]- self.time_gw[0:-1:2])
+    print('\n=====| Timings of main algorithms |=====')
     for i in zip(timing, steps):     
       if (round(i[0],3) != 0): print('{:20.19s}:{:14.2f} secs'.format(i[1],i[0]))
 
-    print('-'*20,'\nTotal spent time    :{:14.2f} secs'.format (self.time_gw[-1]-self.time_gw[0]),'\n')       
+    print('-'*20,'\nTotal spent time    :{:14.2f} secs'.format (self.time_gw[-1]-self.time_gw[0]),'\n')
+    return  timing, steps      
 
 #
 # Example of reporting expectation values of mean-field calculations.
