@@ -7,7 +7,6 @@ from timeit import default_timer as timer
 from scipy.linalg import blas
 
 from pyscf.nao import mf
-from pyscf.nao.m_tddft_iter_gpu import tddft_iter_gpu_c
 from pyscf.nao.m_chi0_noxv import chi0_mv_gpu, chi0_mv
 from pyscf.data.nist import HARTREE2EV
 
@@ -20,8 +19,6 @@ class chi0_matvec(mf):
         from pyscf.nao.m_fermi_dirac import fermi_dirac_occupations
 
         self.dtype = kw['dtype'] if 'dtype' in kw else np.float64
-        for x in ['dtype']:
-            kw.pop(x, None)
 
         if "use_initial_guess_ite_solver" in kw:
             self.use_initial_guess_ite_solver = kw["use_initial_guess_ite_solver"]
@@ -41,7 +38,7 @@ class chi0_matvec(mf):
 
         self.dealloc_hsx = kw['dealloc_hsx'] if 'dealloc_hsx' in kw else True
         self.eps = kw['iter_broadening'] if 'iter_broadening' in kw else 0.00367493
-        self.GPU = GPU = kw['GPU'] if 'GPU' in kw else None
+        self.GPU = kw['GPU'] if 'GPU' in kw else False
         self.nfermi_tol = nfermi_tol = kw['nfermi_tol'] if 'nfermi_tol' in kw else 1e-5
         self.telec = kw['telec'] if 'telec' in kw else self.telec
         self.fermi_energy = kw['fermi_energy'] if 'fermi_energy' in kw else self.fermi_energy
@@ -51,16 +48,24 @@ class chi0_matvec(mf):
         assert isinstance(self.eps, float)
 
         self.div_numba = None
-        if self.use_numba:
+        if self.GPU:
+            if not self.use_numba:
+                raise ValueError("GPU calculations require Numba")
+            from pyscf.nao.m_div_eigenenergy_numba import div_eigenenergy_gpu
+            self.div_numba = div_eigenenergy_gpu
+        elif self.use_numba:
             from pyscf.nao.m_div_eigenenergy_numba import div_eigenenergy_numba
             self.div_numba = div_eigenenergy_numba
 
-        if hasattr(self, 'hsx') and self.dealloc_hsx: self.hsx.deallocate()     # deallocate hsx
+        # deallocate hsx
+        if hasattr(self, 'hsx') and self.dealloc_hsx: self.hsx.deallocate()
 
         self.ksn2e = self.mo_energy # Just a pointer here. Is it ok?
         
         if 'fermi_energy' in kw:
-            if self.verbosity>0: print(__name__, 'Fermi energy is specified => recompute occupations')
+            if self.verbosity > 0:
+                print(__name__, 'Fermi energy is specified => recompute occupations')
+
             ksn2fd = fermi_dirac_occupations(self.telec, self.ksn2e, self.fermi_energy)
             for s,n2fd in enumerate(ksn2fd[0]):
                 if not all(n2fd>self.nfermi_tol): continue
@@ -81,7 +86,7 @@ class chi0_matvec(mf):
         self.xvrt = [self.mo_coeff[0,s,vstart:,:,0]\
                              for s,vstart in enumerate(self.vstart)]
      
-        if self.verbosity>4 :
+        if self.verbosity > 4:
             print(__name__, '\t====> self.dtype ', self.dtype)
             print(__name__, '\t====> self.xocc[0].dtype ', self.xocc[0].dtype)
             print(__name__, '\t====> self.xvrt[0].dtype ', self.xvrt[0].dtype)
@@ -89,30 +94,35 @@ class chi0_matvec(mf):
             print(__name__, '\t====> Occupations (ksn2f):\n{},\tType: {}'.format(self.ksn2f,self.ksn2f.dtype))
 
         self.rf0_ncalls = 0
-                
         if not hasattr(self, 'pb'):
             print('no pb?')
             return
-          
+
         pb = self.pb
         self.moms0,self.moms1 = pb.comp_moments(dtype=self.dtype)
 
         if self.GPU:
-            raise ValueError("GPU implementation broken")
-            # self.initialize_chi0_matvec_GPU()
-        #self.td_GPU = tddft_iter_gpu_c(GPU, self.mo_coeff[0,0,:,:,0], self.ksn2f, 
-        #                               self.ksn2e, self.norbs, self.nfermi, self.nprod,
-        #                               self.vstart)
+            self.initialize_chi0_matvec_GPU()
 
     def initialize_chi0_matvec_GPU(self):
+        """
+        Initialize GPU variable.
+        Copy xocc, xvrt, ksn2e and ksn2f to the device
+        """
 
         try:
             import cupy as cp
         except RuntimeError as err:
             raise RuntimeError("Could not import cupy: {}".format(err))
 
-        self.xocc_gpu = cp.asarray(self.xocc)
-        self.xvrt_gpu = cp.asarray(self.xvrt)
+        self.xocc_gpu = []
+        self.xvrt_gpu = []
+        self.ksn2e_gpu = cp.asarray(self.ksn2e)
+        self.ksn2f_gpu = cp.asarray(self.ksn2f)
+
+        for spin in range(self.nspin):
+            self.xocc_gpu.append(cp.asarray(self.xocc[spin]))
+            self.xvrt_gpu.append(cp.asarray(self.xvrt[spin]))
 
     def apply_rf0(self, sp2v, comega=1j*0.0):
         """
@@ -125,10 +135,11 @@ class chi0_matvec(mf):
                 "{} {}".format(sp2v.shape,expect_shape)
         self.rf0_ncalls+=1
 
-        if self.GPU is None:
-            return chi0_mv(self, sp2v, comega, timing=self.chi0_timing)
-        else:
+        if self.GPU:
             return chi0_mv_gpu(self, sp2v, comega)
+        else:
+            return chi0_mv(self, sp2v, comega, timing=self.chi0_timing)
+
 
     def comp_polariz_nonin_xx_atom_split(self, comegas):
         """
