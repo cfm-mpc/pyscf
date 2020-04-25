@@ -73,19 +73,21 @@ def chi0_mv_gpu(self, dvin, comega=1j*0.0, timing=None):
                     nm2v_re, nm2v_im, div_numba=self.div_numba,
                     use_numba=self.use_numba)
 
+    # real part
     nb2v = nm2v_re.dot(self.xvrt_gpu[spin])
     ab2v = self.xocc_gpu[spin].T.dot(nb2v)
     ab2v_re = cp.asnumpy(ab2v).reshape(self.norbs*self.norbs)
+    
+    vdp = csr_matvec(self.v_dab_csr, ab2v_re)
+    chi0_re = csr_matvec(self.cc_da_trans, vdp)
 
+    # imag part
     nb2v = nm2v_im.dot(self.xvrt_gpu[spin])
     ab2v = self.xocc_gpu[spin].T.dot(nb2v)
     ab2v_im = cp.asnumpy(ab2v).reshape(self.norbs*self.norbs)
 
-    # real part
-    chi0_re = calc_sab(self.v_dab_csr, self.cc_da_trans, ab2v_re, timing[13:15])
-
-    # imag part
-    chi0_im = calc_sab(self.v_dab_csr, self.cc_da_trans, ab2v_im, timing[15:17])
+    vdp = csr_matvec(self.v_dab_csr, ab2v_im)
+    chi0_im = csr_matvec(self.cc_da_trans, vdp)
 
     return chi0_re + 1.0j*chi0_im
 
