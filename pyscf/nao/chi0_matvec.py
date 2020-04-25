@@ -198,8 +198,6 @@ class chi0_matvec(mf):
         dn = np.zeros((3, nww, self.nspin*self.nprod), dtype=self.dtypeComplex)
         Edir = Eext/np.dot(Eext, Eext)
     
-        print("self.moms1: ", self.moms1.shape)
-        print("nspin, norbs: ", self.nspin, self.nprod)
         vext = np.zeros((self.nspin*self.nprod, 3), dtype=self.moms1.dtype)
         for ixyz in range(3):
             vext[:, ixyz] = np.concatenate([self.moms1[:, ixyz] for s in range(self.nspin)])
