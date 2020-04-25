@@ -297,8 +297,11 @@ class gw_iter(gw):
   def chi0_mv(self, dvin, comega):
 
       self.ncall_chi0_mv_ite += 1
-
-      return gw_chi0_mv(self, dvin, comega=comega, timing=self.chi0_timing)
+      
+      if self.GPU:
+          return gw_chi0_mv_gpu(self, dvin, comega=comega)
+      else:
+          return gw_chi0_mv(self, dvin, comega=comega, timing=self.chi0_timing)
 
   def gw_applykernel_nspin1(self,dn):
     daux  = np.zeros(self.nprod, dtype=self.dtype)

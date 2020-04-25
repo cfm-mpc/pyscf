@@ -195,59 +195,50 @@ def gw_chi0_mv(self, dvin, comega=1j*0.0, timing=None):
 
     return chi0_re + 1.0j*chi0_im
 
-#
-#
-#
-def gw_chi0_mv_gpu(self, v, comega=1j*0.0):
-# check with nspin=2
+def gw_chi0_mv_gpu(self, dvin, comega=1j*0.0, timing=None):
     """
-        Apply the non-interacting response function to a vector using gpu for
-        matrix-matrix multiplication
+    TODO: nspin == 2
     """
+    import cupy as cp
+
     assert self.nspin == 1
-
-    if self.dtype != np.float32:
-        print(self.dtype)
-        raise ValueError("GPU version only with single precision")
+    spin = 0
 
     # real part
-    sab = calc_sab(self.cc_da_csr, self.v_dab_trans,
-                   v.real).reshape([self.norbs, self.norbs])
-    self.td_GPU.cpy_sab_to_device(sab, Async = 1)
-    self.td_GPU.calc_nb2v_from_sab(reim=0)
+    vdp = csr_matvec(self.cc_da_csr, dvin.real)
+    sab_re = csr_matvec(self.v_dab_trans, vdp).reshape((self.norbs,self.norbs))
+    sab_re_gpu = cp.asarray(sab_re)
 
-    # nm2v_real
-    self.td_GPU.calc_nm2v_real()
+    nb2v = self.xocc_gpu[spin].dot(sab_re_gpu)
+    nm2v_re = nb2v.dot(self.xvrt_gpu[spin].T)
 
-    # start imaginary part
-    sab = calc_sab(self.cc_da_csr, self.v_dab_trans,
-                   v.imag).reshape([self.norbs, self.norbs])
-    self.td_GPU.cpy_sab_to_device(sab, Async = 2)
+    # imaginary
+    vdp = csr_matvec(self.cc_da_csr, dvin.imag)
+    sab_im = csr_matvec(self.v_dab_trans, vdp).reshape((self.norbs,self.norbs))
+    sab_im_gpu = cp.asarray(sab_im)
 
-    self.td_GPU.calc_nb2v_from_sab(reim=1)
-    # nm2v_imag
-    self.td_GPU.calc_nm2v_imag()
+    nb2v = self.xocc_gpu[spin].dot(sab_im_gpu)
+    nm2v_im = nb2v.dot(self.xvrt_gpu[spin].T)
 
-    self.td_GPU.div_eigenenergy_gpu(comega)
+    vs, nf = self.vstart[spin], self.nfermi[spin]
+    div_eigenenergy(self.ksn2e_gpu, self.ksn2f_gpu, spin, nf, vs, comega,
+                    nm2v_re, nm2v_im, div_numba=self.div_numba,
+                    use_numba=self.use_numba)
+
     # real part
-    self.td_GPU.calc_nb2v_from_nm2v_real()
-    self.td_GPU.calc_sab(reim=0)
-    self.td_GPU.cpy_sab_to_host(sab, Async = 1)
-
-    # start calc_ imag to overlap with cpu calculations
-    self.td_GPU.calc_nb2v_from_nm2v_imag()
-
-    vdp = csr_matvec(self.v_dab_csr, sab)
-
-    self.td_GPU.calc_sab(reim=1)
-
-    # finish real part
+    nb2v = nm2v_re.dot(self.xvrt_gpu[spin])
+    ab2v = self.xocc_gpu[spin].T.dot(nb2v)
+    ab2v_re = cp.asnumpy(ab2v).reshape(self.norbs*self.norbs)
+    
+    vdp = csr_matvec(self.v_dab_csr, ab2v_re)
     chi0_re = csr_matvec(self.cc_da_trans, vdp)
 
     # imag part
-    self.td_GPU.cpy_sab_to_host(sab)
+    nb2v = nm2v_im.dot(self.xvrt_gpu[spin])
+    ab2v = self.xocc_gpu[spin].T.dot(nb2v)
+    ab2v_im = cp.asnumpy(ab2v).reshape(self.norbs*self.norbs)
 
-    vdp = csr_matvec(self.v_dab_csr, sab)
+    vdp = csr_matvec(self.v_dab_csr, ab2v_im)
     chi0_im = csr_matvec(self.cc_da_trans, vdp)
 
     return chi0_re + 1.0j*chi0_im
