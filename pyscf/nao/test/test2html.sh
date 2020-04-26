@@ -27,7 +27,7 @@ echo "${white}"
 #git pull https://github.com/cfm-mpc/pyscf nao
 
 
-LIST="$(ls test_*.py)"
+LIST="$(ls test_*gw*.py)"
 err=("${arr[@]}")
 m=0
 n=0
@@ -74,8 +74,8 @@ mutt -e 'set content_type="text/html"' "$EMAIL" -s "$SUBJECT" <"$EMAILMESSAGE"
 
 
 #moving data to home
-mkdir REPORT
-mv *.html ./REPORT/
-mv REPORT $HOME/
+#mkdir REPORT
+#mv *.html ./REPORT/
+#mv REPORT $HOME/
 
 git clean -f

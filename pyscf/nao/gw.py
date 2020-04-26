@@ -6,13 +6,14 @@ from pyscf.nao.m_rf0_den import rf0_den, rf0_den_numba, rf0_cmplx_ref_blk, rf0_c
 from pyscf.nao.m_rf0_den import rf0_cmplx_vertex_ac, si_correlation, si_correlation_numba
 from pyscf.nao.m_rf_den import rf_den
 from pyscf.nao.m_rf_den_pyscf import rf_den_pyscf
+from pyscf.nao.log_mesh import funct_log_mesh
 from pyscf.data.nist import HARTREE2EV
 from pyscf.nao.m_valence import get_str_fin
 from timeit import default_timer as timer
+import time
 from numpy import stack, dot, zeros, einsum, pi, log, array, require
 import scipy.sparse as sparse
 from pyscf.nao import scf
-import time
 
 try:
   import numba as nb
@@ -23,14 +24,17 @@ except:
 def __LINE__():
       return sys._getframe(1).f_lineno
 
-start_time = time.time()
 class gw(scf):
   """ G0W0 with integration along imaginary axis """
   
   def __init__(self, **kw):
-    from pyscf.nao.log_mesh import funct_log_mesh
     """ Constructor G0W0 class """
     # how to exclude from the input the dtype and xc_code ?
+
+    self.start_time = time.time()
+    self.time_gw = np.zeros(28)
+    self.time_gw[0] = timer();
+    
     scf.__init__(self, **kw)
 
     self.xc_code_scf = copy(self.xc_code)
@@ -43,6 +47,10 @@ class gw(scf):
     self.frozen_core = kw['frozen_core'] if 'frozen_core' in kw else None
     self.write_R = kw['write_R'] if 'write_R' in kw else False
     self.restart = kw['restart'] if 'restart' in kw else False
+
+    from pyscf.nao.m_restart import check_res
+    if self.write_R: check_res (filename = 'RESTART.hdf5')
+
     if sum(self.nelec) == 1:
       raise RuntimeError('Not implemented H, sorry :-) Look into scf/__init__.py for HF1e class...')
     
@@ -132,6 +140,7 @@ class gw(scf):
     * magnetization = {},
     * states to be corrected from {} to {}.""".format(nocc_0t, self.nfermi, self.vst, self.norbs, self.nspin, self.spin, self.start_st, self.finish_st)
         print(__name__, mess)
+    self.time_gw[1] = timer();
 
   def get_h0_vh_x_expval(self):
     """
@@ -141,17 +150,27 @@ class gw(scf):
     self.get_k() = Exchange operator/energy
     mat1 is product of this Hamiltonian and molecular coefficients and it will be diagonalized in expval by einsum
     """
+    self.time_gw[2] = timer();
+    self.time_gw[4] = timer();
+    if not hasattr(self, 'kmat'): self.kmat = self.get_k()
+    self.time_gw[5] = timer();
+
+    self.time_gw[6] = timer();
+    if not hasattr(self, 'jmat'): self.jmat = self.get_j()
+    self.time_gw[7] = timer();
+
     if self.nspin==1:
-      mat = self.get_hcore()+self.get_j()-0.5*self.get_k()
+      mat = self.get_hcore() + self.jmat - 0.5*self.kmat
       mat1 = np.dot(self.mo_coeff[0,0,:,:,0], mat)
       expval = einsum('nb,nb->n', mat1, self.mo_coeff[0,0,:,:,0]).reshape((1,self.norbs))
     elif self.nspin==2:
-      vh = self.get_j()
-      mat = self.get_hcore()+vh[0]+vh[1]-self.get_k()
+      mat = self.get_hcore()+ self.jmat[0]+ self.jmat[1]- self.kmat
       expval = zeros((self.nspin, self.norbs))
       for s in range(self.nspin):
         mat1 = np.dot(self.mo_coeff[0,s,:,:,0], mat[s])
         expval[s] = einsum('nb,nb->n', mat1, self.mo_coeff[0,s,:,:,0])
+
+    self.time_gw[3] = timer();
     return expval
     
   def get_wmin_wmax_tmax_ia_def(self, tol):
@@ -233,30 +252,24 @@ class gw(scf):
     sf[spin,n,m,w] = X^n V_mu X^m W_mu_nu X^n V_nu X^m,
     where n runs from s...f, m runs from 0...norbs, w runs from 0...nff_ia, spin=0...1 or 2.
     """
+    self.time_gw[10] = timer();
     wpq2si0 = self.si_c(ww = 1j*self.ww_ia).real
     v_pab = self.pb.get_ac_vertex_array()
     #self.snmw2sf_ncalls += 1
     snmw2sf = []
     for s in range(self.nspin):
       nmw2sf = zeros((len(self.nn[s]), self.norbs, self.nff_ia), dtype=self.dtype)
-      #nmw2sf = zeros((len(self.nn), self.norbs, self.nff_ia), dtype=self.dtype)
-
-      # n runs from s...f or states will be corrected:
-      # self.nn = [range(self.start_st[s], self.finish_st[s])
       xna = self.mo_coeff[0,s,self.nn[s],:,0]
-      #xna = self.mo_coeff[0,s,self.nn,:,0]
-
-      # m runs from 0...norbs
       xmb = self.mo_coeff[0,s,:,:,0]
-
-      # This calculates nmp2xvx= X^n V_mu X^m for each side
+      #This calculates nmp2xvx= X^n V_mu X^m for each side
       nmp2xvx = einsum('na,pab,mb->nmp', xna, v_pab, xmb, optimize=optimize)
+
       for iw,si0 in enumerate(wpq2si0):
         # This calculates nmp2xvx(outer loop)*real.W_mu_nu*nmp2xvx 
         nmw2sf[:,:,iw] = einsum('nmp,pq,nmq->nm', nmp2xvx, si0, nmp2xvx, optimize=optimize)
       
       snmw2sf.append(nmw2sf)
-   
+    self.time_gw[11] = timer();
     return snmw2sf
 
   def gw_corr_int(self, sn2w, eps=None):
@@ -265,7 +278,6 @@ class gw(scf):
     -\frac{1}{2\pi}\int_{-\infty}^{+\infty } \sum_m \frac{I^{nm}(i\omega{'})}{E_n + i\omega{'}-E_m^0} d\omega{'}
     see eq (16) within DOI: 10.1021/acs.jctc.9b00436
     """
-
     if not hasattr(self, 'snmw2sf'):
       if self.restart:
         from pyscf.nao.m_restart import read_rst_h5py
@@ -274,8 +286,12 @@ class gw(scf):
       else:
         self.snmw2sf = self.get_snmw2sf()
 
+    if self.write_R: self.write_data(step = 'W_c')
+    t1 = timer()
+
     sn2int = [np.zeros_like(n2w, dtype=self.dtype) for n2w in sn2w ]
     eps = self.dw_excl if eps is None else eps
+
 
     # split into mo_energies
     for s,ww in enumerate(sn2w):
@@ -290,6 +306,8 @@ class gw(scf):
           #print(n, m, -state_corr, w-self.ksn2e[0,s,m])
           sn2int[s][n] -= state_corr
 
+    t2 = timer()
+    self.time_gw[17] += t2 - t1
     return sn2int
 
   def gw_corr_res(self, sn2w):
@@ -297,6 +315,7 @@ class gw(scf):
     This computes a residue part of the GW correction at energies sn2w[spin,len(self.nn)]
     """
     v_pab = self.pb.get_ac_vertex_array()
+    t1 = timer()
     sn2res = [np.zeros_like(n2w, dtype=self.dtype) for n2w in sn2w ]
     
     for s,ww in enumerate(sn2w):    #split into spin and energies
@@ -316,6 +335,8 @@ class gw(scf):
           #print(pole[0], pole[2], contr)
           sn2res[s][nl] += pole[2]*contr
     
+    t2 = timer()
+    self.time_gw[19] += t2 - t1    
     return sn2res
 
   def lsofs_inside_contour(self, ee, w, eps):
@@ -397,14 +418,16 @@ class gw(scf):
       sn2eval_gw_prev = copy(sn2eval_gw)
       err = 0.0
       for s,nn_conv in enumerate(self.nn_conv): err += abs(sn2mismatch[s,nn_conv]).sum()/len(nn_conv)
-
       if self.verbosity>0:
         np.set_printoptions(linewidth=1000, suppress=True, precision=5)
-        print('Iteration #{:3d}  Relative Error: {:.8f}'.format(i+1, err))
+        print('Iteration #{:3d}, Relative Error: {:.8f}, Time spent up to now: {:.1f} secs'
+                .format(i+1, err, timer()-self.time_gw[0]))
+
       if self.verbosity>1:
         #print(sn2mismatch)
         for s,n2ev in enumerate(sn2eval_gw):
-          print('Spin{}: {}'.format(s+1, n2ev[:]*HARTREE2EV)) #, sn2i[s][:]*HARTREE2EV, sn2r[s][:]*HARTREE2EV))   
+          print('Spin{}: {}'.format(s+1, n2ev[:]*HARTREE2EV))
+  
       if err<self.tol_ev : 
         if self.verbosity>0: print('-'*40,' |  Convergence has been reached at iteration#{}  | '.format(i+1),'-'*40,'\n')
         break
@@ -415,17 +438,32 @@ class gw(scf):
   def make_mo_g0w0(self):
     """ This creates the fields mo_energy_g0w0, and mo_coeff_g0w0 """
 
-    self.h0_vh_x_expval = self.get_h0_vh_x_expval()
+
+    if not hasattr(self, 'h0_vh_x_expval'):
+        if self.restart: 
+            from pyscf.nao.m_restart import read_rst_h5py
+            self.kmat , msg= read_rst_h5py(value='K_matrix', filename= 'RESTART.hdf5', arr=True)
+            self.jmat , msg= read_rst_h5py(value='J_matrix', filename= 'RESTART.hdf5', arr=True)
+            self.h0_vh_x_expval , msg= read_rst_h5py(value='H0_EXP', filename= 'RESTART.hdf5', arr=True)
+            msg = 'RESTART: self.kmat, self.kmat and and self.h0_vh_x_expval read from RESTART.hdf5'
+            print(msg)
+        else:
+            self.h0_vh_x_expval = self.get_h0_vh_x_expval()
+            if self.write_R:
+                self.write_data(step = 'H0EXP')
 
     if self.verbosity>3:    self.report_mf()
 
+    self.time_gw[8] = timer();
     if not hasattr(self,'sn2eval_gw'): self.sn2eval_gw=self.g0w0_eigvals() # Comp. GW-corrections
+    self.time_gw[9] = timer();
     
     # Update mo_energy_gw, mo_coeff_gw after the computation is done
     self.mo_energy_gw = np.copy(self.mo_energy)
     self.mo_coeff_gw = np.copy(self.mo_coeff)
     self.argsort = []
 
+    self.time_gw[24] = timer();
     for s,nn in enumerate(self.nn):
       self.mo_energy_gw[0,s,nn] = self.sn2eval_gw[s]
       nn_occ = [n for n in nn if n<self.nocc_0t[s]]
@@ -440,7 +478,6 @@ class gw(scf):
       #print(self.mo_energy_g0w0)
       argsrt = np.argsort(self.mo_energy_gw[0,s,:])
       self.argsort.append(argsrt)
-
       if self.verbosity>2: 
         order = self.argsort[s][self.start_st[s]:self.finish_st[s]]        
         print(__name__, '\t\t====> Spin {}: energy-sorted MO indices: {}'.format(str(s+1),order))
@@ -448,27 +485,30 @@ class gw(scf):
       self.mo_energy_gw[0,s,:] = np.sort(self.mo_energy_gw[0,s,:])
       for n,m in enumerate(argsrt): self.mo_coeff_gw[0,s,n] = self.mo_coeff[0,s,m]
  
+    self.time_gw[25] = timer();
     self.xc_code = 'GW'
     if self.verbosity>4:
       print(__name__,'\t\t====> Performed xc_code: {}\n '.format(self.xc_code))
-      print('\nConverged GW-corrected eigenvalues:\n',self.mo_energy_gw*HARTREE2EV)
+      print('\nConverged GW-corrected eigenvalues (Ha):\n',
+        [self.mo_energy_gw[0,s][self.start_st[s]:self.finish_st[s]] for s in range(self.nspin)])
 
     if self.write_R:    self.write_data()
     
     return self.etot_gw()
         
   kernel_gw = make_mo_g0w0
+  
 
   def etot_gw(self):
+    self.time_gw[26] = timer();
     dm1 = self.make_rdm1()
     ecore = (self.get_hcore()*dm1[0,...,0]).sum()
-    vh,kmat = self.get_jk()
     
     if self.nspin==1:
-      etot = ecore + 0.5*((vh-0.5*kmat)*dm1[0,...,0]).sum()
+      etot = ecore + 0.5*((self.jmat-0.5*self.kmat)*dm1[0,...,0]).sum()
     elif self.nspin==2:
-      etot = ecore + 0.5*((vh[0]+vh[1]-kmat)*dm1[0,...,0]).sum()
-    else:
+      etot = ecore + 0.5*((self.jmat[0]+ self.jmat[1]- self.kmat)*dm1[0,...,0]).sum()
+    else: 
       print(__name__, self.nspin)
       raise RuntimeError('nspin?')
     
@@ -478,6 +518,7 @@ class gw(scf):
         ecorr -= 0.5*m2occ[m]*(n2egw[n]-m2emf[m])
     
     self.etot_gw = etot+ecorr+self.energy_nuc()
+    self.time_gw[27] = timer();
     return self.etot_gw
     
   def spin_square(self):
@@ -502,11 +543,29 @@ class gw(scf):
     from pyscf.nao.m_report import report_gw
     return report_gw(self)
 
-  def write_data(self):
+  def report_t(self):
+    """ Prints spent time in each step of GW class"""
+    from pyscf.nao.m_report import report_gw_t
+    return report_gw_t(self)
+
+  def write_data(self, step = None):
     "writes data in RESTART'hdf5' format"
     from pyscf.nao.m_restart import write_rst_h5py
-    write_rst_h5py (value='screened_interactions', data=self.snmw2sf)
-    write_rst_h5py (value='MF_energies_Ha', data=self.mo_energy)
-    write_rst_h5py (value='QP_energies_Ha', data=self.mo_energy_gw)
-    write_rst_h5py (value='correct_order' , data=self.argsort)
-    write_rst_h5py (value='G0W0_eigenfuns', data=self.mo_coeff_gw)
+    step='all' if step is None else step
+
+    if step == 'H0EXP' or step == 'all':
+        write_rst_h5py (value='K_matrix', data=self.kmat)
+        write_rst_h5py (value='J_matrix', data=self.jmat)
+        write_rst_h5py (value='H0_EXP', data=self.h0_vh_x_expval)
+
+    elif step == 'W_c' or step == 'all':
+        if hasattr(self, 'xvx'):
+            write_rst_h5py (value='XVX', data=self.xvx)
+        write_rst_h5py (value='screened_interactions', data=self.snmw2sf)
+
+    elif step == 'G0W0' or step == 'all':
+        write_rst_h5py (value='MF_energies_Ha', data=self.mo_energy)
+        write_rst_h5py (value='QP_energies_Ha', data=self.mo_energy_gw)
+        write_rst_h5py (value='correct_order' , data=self.argsort)
+        write_rst_h5py (value='G0W0_eigenfuns', data=self.mo_coeff_gw)
+
