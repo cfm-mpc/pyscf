@@ -197,6 +197,9 @@ class gw_iter(gw):
     """
 
     from scipy.sparse.linalg import LinearOperator, lgmres
+
+    if self.GPU:
+        self.initialize_chi0_matvec_GPU()
     
     ww = 1j*self.ww_ia
     xvx = self.gw_xvx(self.gw_xvx_algo)
@@ -299,7 +302,7 @@ class gw_iter(gw):
       self.ncall_chi0_mv_ite += 1
       
       if self.GPU:
-          return gw_chi0_mv_gpu(self, dvin, comega=comega)
+          return gw_chi0_mv_gpu(self, dvin, comega=comega, timing=self.chi0_timing)
       else:
           return gw_chi0_mv(self, dvin, comega=comega, timing=self.chi0_timing)
 
@@ -323,6 +326,10 @@ class gw_iter(gw):
     """
     
     from scipy.sparse.linalg import LinearOperator
+
+    if self.GPU:
+        self.initialize_chi0_matvec_GPU()
+
     self.comega_current = comega
     veff_op = LinearOperator((self.nprod,self.nprod),
                              matvec=self.gw_vext2veffmatvec,
@@ -390,6 +397,10 @@ class gw_iter(gw):
     This computes an integral part of the GW correction at GW class while
     uses get_snmw2sf_iter
     """
+
+    if self.GPU:
+        self.initialize_chi0_matvec_GPU()
+
     if not hasattr(self, 'snmw2sf'):
 
         if self.restart: 

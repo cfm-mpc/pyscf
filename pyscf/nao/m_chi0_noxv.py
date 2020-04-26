@@ -31,8 +31,12 @@ def chi0_mv(self, dvin, comega=1j*0.0, dnout=None, timing=None):
         sab_im = calc_sab(self.cc_da_csr, self.v_dab_trans,
                        sp2v[spin].imag, timing[2:4]).reshape((self.norbs,self.norbs))
 
-        ab2v_re, ab2v_im = get_ab2v(self, sab_re, sab_im, spin, comega,
-                                    timing[4:13])
+        ab2v_re, ab2v_im = get_ab2v(self.xocc[spin], self.xvrt[spin],
+                                    self.vstart[spin], self.nfermi[spin],
+                                    self.norbs, self.ksn2e[0, spin],
+                                    self.ksn2f[0, spin],
+                                    sab_re, sab_im, comega, self.div_numba,
+                                    self.use_numba, timing[4:13])
 
         chi0_re = calc_sab(self.v_dab_csr, self.cc_da_trans, ab2v_re,
                            timing[13:15])
@@ -105,15 +109,15 @@ def calc_sab(mat1, mat2, vec, timing):
 
     return sab
 
-def div_eigenenergy(ksn2e, ksn2f, spin, nf, vs, comega, nm2v_re, nm2v_im,
+def div_eigenenergy(ksn2e, ksn2f, nf, vs, comega, nm2v_re, nm2v_im,
                     div_numba=None, use_numba=False):
     
     if use_numba and div_numba is not None:
-        div_numba(ksn2e[0, spin], ksn2f[0, spin], nf, vs, comega,
+        div_numba(ksn2e, ksn2f, nf, vs, comega,
                   nm2v_re, nm2v_im)
     else:
-        for n, (en, fn) in enumerate(zip(ksn2e[0, spin, :nf], ksn2f[0, spin, :nf])):
-            for m, (em, fm) in enumerate(zip(ksn2e[0, spin, vs:], ksn2f[0, spin, vs:])):
+        for n, (en, fn) in enumerate(zip(ksn2e[:nf], ksn2f[:nf])):
+            for m, (em, fm) in enumerate(zip(ksn2e[vs:], ksn2f[vs:])):
                 nm2v = nm2v_re[n, m] + 1.0j*nm2v_im[n, m]
                 nm2v = nm2v * (fn - fm) * \
                 ( 1.0 / (comega - (em - en)) - 1.0 / (comega + (em - en)) )
@@ -125,63 +129,63 @@ def div_eigenenergy(ksn2e, ksn2f, spin, nf, vs, comega, nm2v_re, nm2v_im,
             for m in range(n-vs):
                 nm2v_re[n,m], nm2v_im[n,m] = 0.0, 0.0
 
-def get_ab2v(self, sab_re, sab_im, spin, comega, timing):
+def get_ab2v(xocc, xvrt, vstart, nfermi, norbs, ksn2e, ksn2f, sab_re, sab_im, comega,
+             div_numba, use_numba, timing):
 
     t1 = timer()
     #nb2v = self.gemm(1.0, self.xocc[spin], sab_re)
-    nb2v = self.xocc[spin].dot(sab_re)
+    nb2v = xocc.dot(sab_re)
     t2 = timer()
     timing[0] += t2 - t1
 
     t1 = timer()
     #nm2v_re = self.gemm(1.0, nb2v, self.xvrt[spin], trans_b=1)
-    nm2v_re = nb2v.dot(self.xvrt[spin].T)
+    nm2v_re = nb2v.dot(xvrt.T)
     t2 = timer()
     timing[1] += t2 - t1
 
     t1 = timer()
     #nb2v = self.gemm(1.0, self.xocc[spin], sab_im)
-    nb2v = self.xocc[spin].dot(sab_im)
+    nb2v = xocc.dot(sab_im)
     t2 = timer()
     timing[2] += t2 - t1
     
     t1 = timer()
     #nm2v_im = self.gemm(1.0, nb2v, self.xvrt[spin], trans_b=1)
-    nm2v_im = nb2v.dot(self.xvrt[spin].T)
+    nm2v_im = nb2v.dot(xvrt.T)
     t2 = timer()
     timing[3] += t2 - t1
 
     t1 = timer()
-    vs, nf = self.vstart[spin], self.nfermi[spin]
-    div_eigenenergy(self.ksn2e, self.ksn2f, spin, nf, vs, comega, nm2v_re,
-                    nm2v_im, div_numba=self.div_numba,
-                    use_numba=self.use_numba)
+    div_eigenenergy(ksn2e, ksn2f, nfermi, vstart, comega, nm2v_re,
+                    nm2v_im, div_numba=div_numba,
+                    use_numba=use_numba)
     t2 = timer()
     timing[4] += t2 - t1
 
     # real part
     t1 = timer()
     #nb2v = self.gemm(1.0, nm2v_re, self.xvrt[spin])
-    nb2v = nm2v_re.dot(self.xvrt[spin])
+    nb2v = nm2v_re.dot(xvrt)
     t2 = timer()
     timing[5] += t2 - t1
 
     t1 = timer()
     #ab2v_re = self.gemm(1.0, self.xocc[spin], nb2v, trans_a=1).reshape(self.norbs*self.norbs)
-    ab2v_re = self.xocc[spin].T.dot(nb2v).reshape(self.norbs*self.norbs)
+    ab2v_re = xocc.T.dot(nb2v).reshape(norbs*norbs)
     t2 = timer()
     timing[6] += t2 - t1
 
     # imag part
     t1 = timer()
     #nb2v = self.gemm(1.0, nm2v_im, self.xvrt[spin])
-    nb2v = nm2v_im.dot(self.xvrt[spin])
+    nb2v = nm2v_im.dot(xvrt)
     t2 = timer()
     timing[7] += t2 - t1
 
     t1 = timer()
     #ab2v_im = self.gemm(1.0, self.xocc[spin], nb2v, trans_a=1).reshape(self.norbs*self.norbs)
-    ab2v_im = self.xocc[spin].T.dot(nb2v).reshape(self.norbs*self.norbs)
+    ab2v_im = xocc.T.dot(nb2v).reshape(norbs*norbs)
     t2 = timer()
     timing[8] += t2 - t1
 
