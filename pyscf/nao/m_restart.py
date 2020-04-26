@@ -6,7 +6,7 @@
 from __future__ import division
 import numpy as np
 
-def read_rst_h5py (value, filename=None):
+def read_rst_h5py (value, filename=None, arr=None):
     import h5py ,os
     if filename is None: 
         msg = "No file to open"
@@ -22,7 +22,7 @@ def read_rst_h5py (value, filename=None):
     a_group_key = list(fl.keys())
     if value in a_group_key: 
         # Get the data
-        data = list(fl[value])
+        data = np.asarray(fl[value]) if arr else list(fl[value])
         msg = 'RESTART: matrix elements of {} was read from {}'.format(value, filename)
         return data, msg
 
@@ -31,7 +31,7 @@ def write_rst_h5py(data, value, filename = None):
     import h5py
     if filename is None: 
       filename= 'RESTART.hdf5'   
-
+    
     hf = h5py.File(filename, 'a')
     try:
         hf.create_dataset(value, data=data)
@@ -67,6 +67,11 @@ def read_rst_yaml (filename=None):
             return data, msg
         except yaml.YAMLError as exc:
             return exc
+
+def check_res (filename):
+    import os
+    if (filename == find(filename,'./')):
+        os.rename(filename, filename+'_OLD')
 
 def find (pattern, path):
     import os, fnmatch

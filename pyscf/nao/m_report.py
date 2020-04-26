@@ -65,7 +65,7 @@ def report_gw (self):
                 out_file.write('\nEnergy-sorted MO indices: \t {}'.format(swap))
 
         out_file.write('\n=====| Timings of main algorithms |=====')
-        timing, steps = report_gw_t(self)
+        timing, steps = report_gw_t(self,ret=True)
 
         for i in zip(timing, steps):     
             if (round(i[0],3) != 0): out_file.write('\n{:20.19s}:{:14.2f} secs'.format(i[1],i[0]))
@@ -211,7 +211,7 @@ def sigma_xc(self):
                 print(' %3d  %16.6f  %3d  | %13.6f  %3d'%(i, a[0],b[0],a[1], b[1]))
  
 
-def report_gw_t(self):
+def report_gw_t(self, ret=None):
     """Lists spent time within main GW calculation"""
     steps = ['initialize NAO',                         #01
              'get_h0_vh_x_expval',' 1-get_K', ' 2-get_J',#23-45-67
@@ -228,7 +228,8 @@ def report_gw_t(self):
       if (round(i[0],3) != 0): print('{:20.19s}:{:14.2f} secs'.format(i[1],i[0]))
 
     print('-'*20,'\nTotal spent time    :{:14.2f} secs'.format (self.time_gw[-1]-self.time_gw[0]),'\n')
-    return  timing, steps      
+    if ret:
+        return  timing, steps      
 
 #
 # Example of reporting expectation values of mean-field calculations.

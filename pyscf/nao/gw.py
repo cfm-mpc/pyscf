@@ -47,6 +47,10 @@ class gw(scf):
     self.frozen_core = kw['frozen_core'] if 'frozen_core' in kw else None
     self.write_R = kw['write_R'] if 'write_R' in kw else False
     self.restart = kw['restart'] if 'restart' in kw else False
+
+    from pyscf.nao.m_restart import check_res
+    if self.write_R: check_res (filename = 'RESTART.hdf5')
+
     if sum(self.nelec) == 1:
       raise RuntimeError('Not implemented H, sorry :-) Look into scf/__init__.py for HF1e class...')
     
@@ -146,6 +150,7 @@ class gw(scf):
     self.get_k() = Exchange operator/energy
     mat1 is product of this Hamiltonian and molecular coefficients and it will be diagonalized in expval by einsum
     """
+    self.time_gw[2] = timer();
     self.time_gw[4] = timer();
     if not hasattr(self, 'kmat'): self.kmat = self.get_k()
     self.time_gw[5] = timer();
@@ -164,6 +169,8 @@ class gw(scf):
       for s in range(self.nspin):
         mat1 = np.dot(self.mo_coeff[0,s,:,:,0], mat[s])
         expval[s] = einsum('nb,nb->n', mat1, self.mo_coeff[0,s,:,:,0])
+
+    self.time_gw[3] = timer();
     return expval
     
   def get_wmin_wmax_tmax_ia_def(self, tol):
@@ -279,6 +286,7 @@ class gw(scf):
       else:
         self.snmw2sf = self.get_snmw2sf()
 
+    if self.write_R: self.write_data(step = 'W_c')
     t1 = timer()
 
     sn2int = [np.zeros_like(n2w, dtype=self.dtype) for n2w in sn2w ]
@@ -430,9 +438,19 @@ class gw(scf):
   def make_mo_g0w0(self):
     """ This creates the fields mo_energy_g0w0, and mo_coeff_g0w0 """
 
-    self.time_gw[2] = timer();
-    self.h0_vh_x_expval = self.get_h0_vh_x_expval()
-    self.time_gw[3] = timer();
+
+    if not hasattr(self, 'h0_vh_x_expval'):
+        if self.restart: 
+            from pyscf.nao.m_restart import read_rst_h5py
+            self.kmat , msg= read_rst_h5py(value='K_matrix', filename= 'RESTART.hdf5', arr=True)
+            self.jmat , msg= read_rst_h5py(value='J_matrix', filename= 'RESTART.hdf5', arr=True)
+            self.h0_vh_x_expval , msg= read_rst_h5py(value='H0_EXP', filename= 'RESTART.hdf5', arr=True)
+            msg = 'RESTART: self.kmat, self.kmat and and self.h0_vh_x_expval read from RESTART.hdf5'
+            print(msg)
+        else:
+            self.h0_vh_x_expval = self.get_h0_vh_x_expval()
+            if self.write_R:
+                self.write_data(step = 'H0EXP')
 
     if self.verbosity>3:    self.report_mf()
 
@@ -530,13 +548,24 @@ class gw(scf):
     from pyscf.nao.m_report import report_gw_t
     return report_gw_t(self)
 
-  def write_data(self):
+  def write_data(self, step = None):
     "writes data in RESTART'hdf5' format"
     from pyscf.nao.m_restart import write_rst_h5py
-    write_rst_h5py (value='screened_interactions_f', data=self.snmw2sf)
-    write_rst_h5py (value='MF_energies_Ha', data=self.mo_energy)
-    write_rst_h5py (value='QP_energies_Ha', data=self.mo_energy_gw)
-    write_rst_h5py (value='correct_order' , data=self.argsort)
-    write_rst_h5py (value='G0W0_eigenfuns', data=self.mo_coeff_gw)
-    write_rst_h5py (value='K_matrix', data=self.kmat)
-    write_rst_h5py (value='J_matrix', data=self.jmat)
+    step='all' if step is None else step
+
+    if step == 'H0EXP' or step == 'all':
+        write_rst_h5py (value='K_matrix', data=self.kmat)
+        write_rst_h5py (value='J_matrix', data=self.jmat)
+        write_rst_h5py (value='H0_EXP', data=self.h0_vh_x_expval)
+
+    elif step == 'W_c' or step == 'all':
+        if hasattr(self, 'xvx'):
+            write_rst_h5py (value='XVX', data=self.xvx)
+        write_rst_h5py (value='screened_interactions', data=self.snmw2sf)
+
+    elif step == 'G0W0' or step == 'all':
+        write_rst_h5py (value='MF_energies_Ha', data=self.mo_energy)
+        write_rst_h5py (value='QP_energies_Ha', data=self.mo_energy_gw)
+        write_rst_h5py (value='correct_order' , data=self.argsort)
+        write_rst_h5py (value='G0W0_eigenfuns', data=self.mo_coeff_gw)
+

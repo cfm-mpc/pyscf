@@ -1,10 +1,8 @@
 from __future__ import print_function, division
-import sys
-import copy
+import sys, copy
 from timeit import default_timer as timer
 import time
 import numpy as np
-
 from pyscf.nao import scf, gw
 from pyscf.data.nist import HARTREE2EV
 from pyscf.nao.m_gw_chi0_noxv import gw_chi0_mv, gw_chi0_mv_gpu
@@ -30,7 +28,6 @@ def profile(fnc):
         return retval
     return inner
 
-start_time = time.time()
 
 class gw_iter(gw):
   """
@@ -50,7 +47,12 @@ class gw_iter(gw):
         self.limited_nbnd= False
 
     self.pass_dupl = kw['pass_dupl'] if 'pass_dupl' in kw else False
-    self.h0_vh_x_expval = self.get_h0_vh_x_expval()
+
+    #if not hasattr(self, 'h0_vh_x_expval'):
+    #    self.h0_vh_x_expval = self.get_h0_vh_x_expval()
+    #    if self.write_R:    
+    #        self.write_data(step = 'H0EXP')
+
     self.ncall_chi0_mv_ite = 0
     self.ncall_chi0_mv_total = 0
     self.lgmres_time_per_step = []
@@ -58,24 +60,23 @@ class gw_iter(gw):
     # Store the ac product basis if necessary (ac_sparse)
     self.v_pab = None
 
-  def si_c2(self,ww):
+  def si_c_iter(self,ww):
     """
     This computes the correlation part of the screened interaction using LinearOpt and lgmres
     lgmres method is much slower than np.linalg.solve !!
     """
-    import numpy as np
-    from scipy.sparse.linalg import lgmres
-    from scipy.sparse.linalg import LinearOperator
-    rf0 = si0 = self.rf0(ww)    
-    for iw,w in enumerate(ww):                                
-      k_c = self.kernel_sq.dot(rf0[iw,:,:])                                         
-      b = k_c.dot(self.kernel_sq)               
-      self.comega_current = w
-      k_c_opt = LinearOperator((self.nprod,self.nprod), matvec=self.gw_vext2veffmatvec, dtype=self.dtypeComplex)  
-      for m in range(self.nprod): 
-         si0[iw,m,:],exitCode = lgmres(k_c_opt, b[m,:], atol=self.gw_iter_tol, maxiter=self.maxiter)   
-      if exitCode != 0: print("LGMRES has not achieved convergence: exitCode = {}".format(exitCode))
-      #np.allclose(np.dot(k_c, si0), b, atol=1e-05) == True  #Test   
+    from scipy.sparse.linalg import lgmres, LinearOperator 
+    si0 = np.zeros((ww.size, self.nprod, self.nprod), dtype=self.dtypeComplex)
+    k_c_opt = LinearOperator((self.nprod,self.nprod), matvec=self.gw_vext2veffmatvec, dtype=self.dtypeComplex) 
+    for iw,w in enumerate(ww):                                 
+      self.comega_current = w 
+       
+      for m in range(self.nprod):  
+        k_c = self.kernel_sq[m] 
+        b = self.chi0_mv(k_c, self.comega_current) 
+        a = self.kernel_sq.dot(b) 
+        si0[iw,m,:],exitCode = lgmres(k_c_opt, a, atol=self.gw_iter_tol, maxiter=self.maxiter)    
+        if exitCode != 0: print("LGMRES has not achieved convergence: exitCode = {}".format(exitCode))
     return si0
 
   def si_c_check (self, tol = 1e-5):
@@ -189,8 +190,8 @@ class gw_iter(gw):
     from scipy.sparse import csc_matrix
     import scipy.sparse.linalg as spla 
 
-    omega = 1j*10.0
-    v =np.ones(self.nprod, dtype=self.dtypeComplex)                           
+    omega = 1j*10.0 if omega is None else omega
+    v = np.ones(self.nprod, dtype=self.dtypeComplex)                           
     vX = self.chi0_mv (v, comega=omega)
     
     vX2 = 1 - vX.real  
@@ -314,9 +315,6 @@ class gw_iter(gw):
     print("Total call chi0_mv: ", self.ncall_chi0_mv_total)
     self.time_gw[11] = timer();
 
-    if self.write_R:
-        from pyscf.nao.m_restart import write_rst_h5py
-        write_rst_h5py (value='screened_interactions', data=snm2i)
     return snm2i
 
 
@@ -442,6 +440,8 @@ class gw_iter(gw):
 
             else:
                 self.snmw2sf = self.get_snmw2sf_iter()
+        
+    if self.write_R: self.write_data(step = 'W_c')
 
     return self.gw_corr_int(sn2w, eps=None)
 
@@ -502,17 +502,6 @@ class gw_iter(gw):
     t2 = timer()
     self.time_gw[19] += t2 - t1 
     return sn2res
-
-
-  def gw_corr_res_states(self, sn2w):
-    """Collects a set of poles for a set of energy"""  
-    states=np.array([])
-    for s,ww in enumerate(sn2w):
-        for nl,(n,w) in enumerate(zip(self.nn[s],ww)):
-            lsos = self.lsofs_inside_contour(self.ksn2e[0,s,:],w,self.dw_excl)
-            stw = array([pole[1] for pole in lsos])
-            states = np.concatenate((states, stw), axis=0)   
-    return states
 
   def g0w0_eigvals_iter(self):
     """
@@ -608,18 +597,35 @@ class gw_iter(gw):
     """
     This creates the fields mo_energy_g0w0, and mo_coeff_g0w0
     """
-    self.time_gw[2] = timer();
-    self.h0_vh_x_expval = self.get_h0_vh_x_expval()
-    self.time_gw[3] = timer();
+
+    if not hasattr(self, 'h0_vh_x_expval'):
+        if self.restart: 
+            from pyscf.nao.m_restart import read_rst_h5py
+            self.kmat , msg= read_rst_h5py(value='K_matrix', filename= 'RESTART.hdf5', arr=True)
+            self.jmat , msg= read_rst_h5py(value='J_matrix', filename= 'RESTART.hdf5', arr=True)
+            self.h0_vh_x_expval , msg= read_rst_h5py(value='H0_EXP', filename= 'RESTART.hdf5', arr=True)
+            msg = 'RESTART: self.kmat, self.kmat and and self.h0_vh_x_expval read from RESTART.hdf5'
+            print(msg)
+        else:
+            self.h0_vh_x_expval = self.get_h0_vh_x_expval()
+            if self.write_R:
+                self.write_data(step = 'H0EXP')
+
     if self.verbosity>2: self.report_mf()
 
     self.time_gw[12] = timer();
-    if not hasattr(self, 'xvx'): self.xvx = self.gw_xvx(self.gw_xvx_algo)
+    if not hasattr(self, 'xvx'):
+        if self.restart: 
+            from pyscf.nao.m_restart import read_rst_h5py 
+            self.xvx , msg= read_rst_h5py(value='XVX', filename= 'RESTART.hdf5')
+            print(msg)
+        else:
+            self.xvx = self.gw_xvx(self.gw_xvx_algo)
     self.time_gw[13] = timer();
 
      
-    if not hasattr(self,'sn2eval_gw'): self.sn2eval_gw=self.g0w0_eigvals_iter() # Comp. GW-corrections
-
+    if not hasattr(self,'sn2eval_gw'): 
+        self.sn2eval_gw=self.g0w0_eigvals_iter() # Comp. GW-corrections
 
 
     # Update mo_energy_gw, mo_coeff_gw after the computation is done
@@ -658,7 +664,7 @@ class gw_iter(gw):
       print('\nConverged GW-corrected eigenvalues (Ha):\n',
         [self.mo_energy_gw[0,s][self.start_st[s]:self.finish_st[s]] for s in range(self.nspin)])
 
-    if self.write_R:    self.write_data()
+    if self.write_R:    self.write_data(step='G0W0')
     self.write_chi0_mv_timing("gw_iter_chi0_mv.txt")
 
     return self.etot_gw()
