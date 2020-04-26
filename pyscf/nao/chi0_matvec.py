@@ -18,14 +18,12 @@ class chi0_matvec(mf):
     def __init__(self, **kw):
         from pyscf.nao.m_fermi_dirac import fermi_dirac_occupations
 
-        self.dtype = kw['dtype'] if 'dtype' in kw else np.float64
-
         if "use_initial_guess_ite_solver" in kw:
             self.use_initial_guess_ite_solver = kw["use_initial_guess_ite_solver"]
         else:
             self.use_initial_guess_ite_solver = False
 
-        mf.__init__(self, dtype=self.dtype, **kw)
+        mf.__init__(self, **kw)
 
         if self.dtype == np.float32:
             self.gemm = blas.sgemm
