@@ -14,7 +14,7 @@
 
 from __future__ import print_function, division
 import os,unittest,numpy as np
-from pyscf.nao.chi0_matvec import chi0_matvec
+from pyscf.nao.tddft_iter import tddft_iter
 from pyscf import gto, scf, tddft
 from pyscf.data.nist import HARTREE2EV
 
@@ -25,9 +25,10 @@ class KnowValues(unittest.TestCase):
     mol = gto.M(verbose=1,atom='O 0 0 0; H 0 0.489 1.074; H 0 0.489 -1.074',basis='cc-pvdz',spin=0)
     gto_mf = scf.UHF(mol)
     gto_mf.kernel()
-    nao_mf = chi0_matvec(gto=mol, mf=gto_mf, tol_loc=1e-5, tol_biloc=1e-7)
+    nao_mf = tddft_iter(gto=mol, mf=gto_mf, tol_loc=1e-5, tol_biloc=1e-7,
+                        verbosity=1)
     comega = np.arange(0.0, 2.0, 0.01) + 1j*0.03
-    pnonin = -nao_mf.comp_polariz_nonin_ave(comega, verbosity=1).imag
+    pnonin = -nao_mf.comp_polariz_nonin_ave(comega).imag
     data = np.array([comega.real*HARTREE2EV, pnonin])
     np.savetxt('test_133_h2o_rhf_nonin_pb.txt', data.T, fmt=['%f','%f'])
     data_ref = np.loadtxt('test_133_h2o_rhf_nonin_pb.txt-ref').T

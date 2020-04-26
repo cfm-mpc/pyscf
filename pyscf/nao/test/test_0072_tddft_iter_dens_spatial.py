@@ -22,10 +22,10 @@ class KnowValues(unittest.TestCase):
 
     # run TDDFT
     omegas = h5py.File(dname+"/tddft_iter_output_water_ref.hdf5", "r")["polarizability/frequency"].value/Ha + 1j*td.eps
-    td.comp_dens_inter_along_Eext(omegas, Eext=np.array([1.0, 1.0, 1.0]))
+    pmat = td.comp_polariz_inter_Edir(omegas, Eext=np.array([1.0, 1.0, 1.0]))
     np.save("density_change_pyscf.npy", td.dn)
     np.save("frequency.npy", omegas.real)
-    np.save("pol_tensor.npy", td.p_mat)
+    np.save("pol_tensor.npy", pmat)
 
     ref = h5py.File(dname+"/tddft_iter_output_water_ref.hdf5", "r")["polarizability"]
     pyscf = np.load("pol_tensor.npy")
@@ -61,9 +61,8 @@ class KnowValues(unittest.TestCase):
     Np = spd.dn_spatial.shape[1]//2
     Nm = dn_mbpt.shape[1]//2
 
-    error = np.sum(abs(spd.dn_spatial[:, Np, :].imag - dn_mbpt[:, Nm, :].imag.T))/dn[:, Np, :].imag.size
+    error = np.sum(abs(spd.dn_spatial[:, Np, :].imag - \
+                       dn_mbpt[:, Nm, :].imag.T))/dn[:, Np, :].imag.size
     assert error < 1e-2
-
-
 
 if __name__ == "__main__": unittest.main()

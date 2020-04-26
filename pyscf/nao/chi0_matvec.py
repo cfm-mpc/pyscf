@@ -130,20 +130,6 @@ class chi0_matvec(mf):
         else:
             return chi0_mv_gpu(self, sp2v, comega)
 
-    def comp_polariz_nonin_xx(self, comegas):
-        """
-        Compute the non interacting polarizability along the xx direction
-        """
-        pxx = np.zeros(comegas.shape, dtype=self.dtypeComplex)
-
-        vext = np.transpose(self.moms1)
-        for iw, comega in enumerate(comegas):
-            dn0 = self.apply_rf0(vext[0], comega)
-            pxx[iw] = np.dot(dn0, vext[0])
-
-        self.write_chi0_mv_timing("tddft_iter_polariz_nonin_chi0_mv.txt")
-        return pxx
-
     def comp_polariz_nonin_xx_atom_split(self, comegas):
         """
         Compute the non interacting polarizability along the xx direction
@@ -163,63 +149,115 @@ class chi0_matvec(mf):
         self.write_chi0_mv_timing("tddft_iter_polariz_nonin_split_chi0_mv.txt")
         return aw2pxx
 
-    def comp_polariz_nonin_ave(self, comegas , **kw):
-        """
-        Compute the average non-interacting polarizability
-        """
-        p_avg = np.zeros(comegas.shape, dtype=self.dtypeComplex)
-        verbosity = kw['verbosity'] if 'verbosity' in kw else self.verbosity
-        
-        nww = len(comegas)
-        for xyz in range(3):
-            vext = np.concatenate([self.moms1[:,xyz] for s in range(self.nspin)])
-            for iw, comega in enumerate(comegas):
-                if verbosity > 1:
-                    print(__name__, xyz, iw, nww, comega*HARTREE2EV)
-                dn0 = self.apply_rf0(vext, comega)
-                p_avg[iw] += (dn0*vext).sum()
-        
-        self.write_chi0_mv_timing("tddft_iter_polariz_nonin_ave_chi0_mv.txt")
-        return p_avg/3.0
-
-    def comp_dens_nonin_along_Eext(self, comegas, Eext = np.array([1.0, 0.0, 0.0])):
-        """ 
-        Compute a the average non-interacting polarizability along the Eext direction
-        for the frequencies comegas.
-        
-        Input Parameters:
-            comegas (1D array, complex): the real part contains the frequencies at which the polarizability
-                        should be computed. The imaginary part id the width of the polarizability define as self.eps
-            Eext (1D xyz array, real): direction of the external field
-
-
-        Calculated quantity:
-            self.p_mat (complex array, dim: [3, 3, comega.size]): store the (3, 3) polarizability matrix 
-                                [[Pxx, Pxy, Pxz],
-                                 [Pyx, Pyy, Pyz],
-                                 [Pzx, Pzy, Pzz]] for each frequency.
-            self.dn (complex array, dim: [3, comegas.size, self.nprod]): store the density change
-        """
-     
-        assert Eext.size == 3
-        
-        self.p0_mat = np.zeros((3, 3, comegas.size), dtype=self.dtypeComplex)
-        self.dn0 = np.zeros((3, comegas.size, self.nprod), dtype=self.dtypeComplex)
-
-        Edir = Eext/np.dot(Eext, Eext)
-
-        vext = np.transpose(self.moms1)
-        for xyz, Exyz in enumerate(Edir):
-            if Exyz == 0.0: continue
-            for iw, comega in enumerate(comegas):
-                self.dn0[xyz, iw, :] = self.apply_rf0(vext[xyz], comega)
-
-        self.p0_mat = np.einsum("iwp,jp->ijw", self.dn0, vext)
-        self.write_chi0_mv_timing("tddft_iter_dens_chng_nonin_chi0_mv.txt")
-
     def write_chi0_mv_timing(self, fname):
 
         with open(fname, "w") as fl:
             fl.write("# step  time [s]\n")
             for it, time in enumerate(self.chi0_timing):
                 fl.write("{}: {}\n".format(it, time))
+
+    def comp_dens_along_Eext(self, comegas, Eext=np.array([1.0, 0.0, 0.0]),
+                             tmp_fname=None, inter=False):
+        """ 
+        Compute a the average interacting polarizability along the Eext direction
+        for the frequencies comegas.
+        
+        Input Parameters:
+            comegas (1D array, complex): the real part contains the frequencies at which the polarizability
+                        should be computed. The imaginary part id the width of the polarizability define as self.eps
+            Eext (1D xyz array, real): direction of the external field
+            maxiter (integer): max number of iteration before to exit iteration loop in GMRES
+        
+        Other Calculated quantity:
+            self.p_mat (complex array, dim: [3, 3, comega.size]): store the (3, 3) polarizability matrix 
+                                [[Pxx, Pxy, Pxz],
+                                 [Pyx, Pyy, Pyz],
+                                 [Pzx, Pzy, Pzz]] for each frequency.
+            self.dn (complex array, dim: [3, comegas.size, self.nprod]): store the density change
+        """
+
+        if tmp_fname is not None:
+            if not isinstance(tmp_fname, str):
+                raise ValueError("tmp_fname must be a string")
+            else:
+                tmp_re = open(tmp_fname+".real", "w")
+                tmp_re.write("# All atomic units\n")
+                tmp_re.write("# w (Ha)    Pxx    Pxy    Pxz    Pyx    Pyy    Pyz    Pzx    Pzy    Pzz\n")
+            
+                tmp_im = open(tmp_fname+".imag", "w")
+                tmp_im.write("# All atomic units\n")
+                tmp_im.write("# w    Pxx    Pxy    Pxz    Pyx    Pyy    Pyz    Pzx    Pzy    Pzz\n")
+
+        if isinstance(Eext, list):
+            Eext = np.array(Eext.size)
+
+        assert Eext.size == 3
+        
+        nww = len(comegas)
+        p_mat = np.zeros((3, 3, nww), dtype=self.dtypeComplex)
+        dn = np.zeros((3, nww, self.nspin*self.nprod), dtype=self.dtypeComplex)
+        Edir = Eext/np.dot(Eext, Eext)
+    
+        vext = np.zeros((self.nspin*self.nprod, 3), dtype=self.moms1.dtype)
+        for ixyz in range(3):
+            vext[:, ixyz] = np.concatenate([self.moms1[:, ixyz] for s in range(self.nspin)])
+
+        for iw, comega in enumerate(comegas):
+
+            dn[:, iw, :], p_mat[:, :, iw] = \
+                    self.calc_dens_Edir_omega(iw, nww, comega, Edir, vext,
+                                              tmp_fname=tmp_fname, inter=inter)
+
+        if inter:
+            fname = "tddft_iter_dens_chng_inter_chi0_mv.txt"
+        else:
+            fname = "tddft_iter_dens_chng_nonin_chi0_mv.txt"
+        self.write_chi0_mv_timing(fname)
+        return dn, p_mat
+        
+    def calc_dens_Edir_omega(self, iw, nww, w, Edir, vext, tmp_fname=None,
+                             inter=False):
+        """
+        Calculate the density change and polarizability for a specific frequency
+        """
+
+        Pmat = np.zeros((3, 3), dtype=self.dtypeComplex)
+        dn = np.zeros((3, self.nspin*self.nprod), dtype=self.dtypeComplex)
+        eV = 27.211386024367243
+
+        for xyz, Exyz in enumerate(Edir):
+            if abs(Exyz) < 1.0e-12:
+                continue
+
+            if self.verbosity > 1:
+                print("dir: {0}, iw: {1}/{2}; w: {3:.4f}".format(xyz, iw, nww,
+                                                                 w.real*eV))
+            if inter:
+                veff = self.comp_veff(vext[:, xyz], w)
+                dn[xyz, :] = self.apply_rf0(veff, w)
+            else:
+                dn[xyz, :] = self.apply_rf0(vext[:, xyz], w)
+
+            for xyzp in range(Edir.size):
+                Pmat[xyz, xyzp] = vext[:, xyzp].dot(dn[xyz, :])
+
+        if tmp_fname is not None:
+            tmp_re = open(tmp_fname + ".real", "a")
+            tmp_re.write("{0:.6e}   ".format(w.real))
+
+            tmp_im = open(tmp_fname + ".imag", "a")
+            tmp_im.write("{0:.6e}   ".format(w.real))
+        
+            for i in range(3):
+                for j in range(3):
+                    tmp_re.write("{0:.6e}    ".format(Pmat[i, j].real))
+                    tmp_im.write("{0:.6e}    ".format(Pmat[i, j].imag))
+            tmp_re.write("\n")
+            tmp_im.write("\n")
+            tmp_re.close()
+            tmp_im.close()
+            # Need to open and close the file at every freq, otherwise
+            # tmp is written only at the end of the calculations, therefore,
+            # it is useless
+
+        return dn, Pmat

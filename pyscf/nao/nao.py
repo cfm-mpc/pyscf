@@ -1,5 +1,6 @@
 from __future__ import print_function, division
 import sys, numpy as np
+import warnings
 from numpy import require
 from timeit import default_timer as timer
 
@@ -471,27 +472,49 @@ class nao():
     else:
       raise RuntimeError('0>nspin>2?')
     
-    if 'fermi_energy' in kw: self.fermi_energy = kw['fermi_energy'] # possibility to redefine Fermi energy
+    if 'fermi_energy' in kw:
+        self.fermi_energy = kw['fermi_energy'] # possibility to redefine Fermi energy
+    
     ksn2fd = fermi_dirac_occupations(self.telec, self.mo_energy, self.fermi_energy)
-    self.mo_occ = (3-self.nspin)*ksn2fd
+    self.mo_occ = (3 - self.nspin)*ksn2fd
+    
     nelec_occ = np.einsum('ksn->s', self.mo_occ)/self.nkpoints
     if not np.allclose(self.nelec, nelec_occ, atol=1e-4):
       fermi_guess = fermi_energy(self.wfsx.ksn2e, self.hsx.nelec, self.hsx.telec)
       np.set_printoptions(precision=2, linewidth=1000)
-      raise RuntimeWarning(
-      '''occupations?\n mo_occ: \n{}\n telec: {}\n nelec expected: {}
- nelec(occ): {}\n Fermi guess: {}\n Fermi: {}\n E_n:\n{}'''.format(self.mo_occ,
- self.telec, self.nelec, nelec_occ, fermi_guess, self.fermi_energy, self.mo_energy))
+      mess = '''
+      The number of electron obtained from the DFT calculations is different
+      than the expected number of electrons. You should check your DFT calculations
+      occupations?
+      mo_occ: {}
+      telec: {}
+      nelec expected: {}
+      nelec(occ): {}
+      Fermi guess: {}
+      Fermi: {}
+      E_n: {}'''.format(self.mo_occ, self.telec, self.nelec, nelec_occ,
+                        fermi_guess, self.fermi_energy, self.mo_energy)
+
+    if not np.allclose(self.nelec, nelec_occ, atol=1.0):
+      # if the Error is above 1.0, we always rise an error  
+      raise RuntimeError(mess)
  
-    if 'fermi_energy' in kw and self.verbosity>0:
+    if not np.allclose(self.nelec, nelec_occ, atol=1.0e-4):
+      if self.nspin == 1 and self.nelec%2 != 0:
+        # For spin nonpolarized and odd number of electrons
+        # an error below 1.0 is assumed acceptable. We just print a warning
+        warnings.warn(mess)
+      else:
+        # For all the other cases we return an error if the difference is larger
+        # than 1.0e-4
+        raise RuntimeError(mess)
+
+    if 'fermi_energy' in kw and self.verbosity > 0:
       po = np.get_printoptions() 
       np.set_printoptions(precision=2, linewidth=1000)
       print(__name__, "mo_occ:\n{}".format(self.mo_occ))
       np.set_printoptions(**po)
 
-
-
-      
   def make_rdm1(self, mo_coeff=None, mo_occ=None):
     # from pyscf.scf.hf import make_rdm1 -- different index order here
     if mo_occ is None: mo_occ = self.mo_occ[0,:,:]
