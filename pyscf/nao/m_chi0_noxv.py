@@ -72,8 +72,8 @@ def chi0_mv_gpu(self, dvin, comega=1j*0.0, timing=None):
     nb2v = self.xocc_gpu[spin].dot(sab_im_gpu)
     nm2v_im = nb2v.dot(self.xvrt_gpu[spin].T)
 
-    vs, nf = self.vstart[spin], self.nfermi[spin]
-    div_eigenenergy(self.ksn2e_gpu, self.ksn2f_gpu, spin, nf, vs, comega,
+    div_eigenenergy(self.ksn2e_gpu[0, spin], self.ksn2f_gpu[0, spin],
+                    self.nfermi[spin], self.vstart[spin], comega,
                     nm2v_re, nm2v_im, div_numba=self.div_numba,
                     use_numba=self.use_numba)
 
