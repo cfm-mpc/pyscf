@@ -27,7 +27,7 @@ class KnowValues(unittest.TestCase):
     gto_mf.kernel()
     nao_mf = tddft_iter(gto=mol, mf=gto_mf)
     comega = np.arange(0.0, 2.0, 0.01) + 1j*0.03
-    pnonin = -nao_mf.comp_polariz_inter_ave(comega, verbosity=0).imag
+    pnonin = -nao_mf.comp_polariz_inter_ave(comega).imag
     data = np.array([comega.real*HARTREE2EV, pnonin])
     np.savetxt('test_141_h2o_uks_pz_pb.txt', data.T, fmt=['%f','%f'])
     data_ref = np.loadtxt('test_141_h2o_uks_pz_pb.txt-ref').T

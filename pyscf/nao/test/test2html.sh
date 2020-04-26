@@ -27,7 +27,7 @@ echo "${white}"
 #git pull https://github.com/cfm-mpc/pyscf nao
 
 
-LIST="$(ls test_*.py)"
+LIST="$(ls test_*gw*.py)"
 err=("${arr[@]}")
 m=0
 n=0
