@@ -99,9 +99,25 @@ def gw_xvx_ac_sparse(self):
     of larger systems, however, the computational cost to get the sparse
     version of the atom-centered product is very high (up to 30% of the full
     simulation time of a GW0 run).
+
+
+    WARNING
+    -------
+    This method is experimental. For production run on large system, the
+    dp_sparse method will be much more efficient in computational time and
+    memory comsumption.
     """
 
     from pyscf.nao.m_rf0_den import calc_XVX
+
+    try:
+        import sparse
+    except:
+        mess = """
+        Could not import the sparse package required by the ac_sparse method.
+        See https://sparse.pydata.org/en/latest/
+        """
+        raise ImportError(mess)
 
     xvx = []
 
