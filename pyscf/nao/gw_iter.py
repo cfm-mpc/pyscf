@@ -54,10 +54,7 @@ class gw_iter(gw):
     #    if self.write_R:    
     #        self.write_data(step = 'H0EXP')
 
-    self.ncall_chi0_mv_ite = 0
-    self.ncall_chi0_mv_total = 0
     self.lgmres_time_per_step = []
-
     # Store the ac product basis if necessary (ac_sparse)
     self.v_pab = None
 
@@ -258,7 +255,7 @@ class gw_iter(gw):
             self.comega_current = w
             #M0 = self.precond_lgmres (w)
 
-            self.ncall_chi0_mv_ite = 0
+            self.chi0mv_ncalls_ite = 0
             if self.verbosity>3:
                 print("spin: {}; freq: {}; nn = {}; norbs = {}".format(s+1, iw, len(self.nn[s]),
                                                              self.norbs))
@@ -299,7 +296,7 @@ class gw_iter(gw):
                                     x0 = None
                                 else:
                                     x0 = copy.deepcopy(prev_sol[n, m, :])
-                            sf_aux[n,m,:], exitCode = ligmres(k_c_opt, a,
+                            sf_aux[n,m,:], exitCode = lgmres(k_c_opt, a,
                                                               atol=self.gw_iter_tol,
                                                               maxiter=self.maxiter,
                                                               x0=x0, M=M0)
@@ -315,16 +312,17 @@ class gw_iter(gw):
             if self.verbosity>3:
                 print("time for lgmres loop: ", round(t2-t1,2))
                 self.lgmres_time_per_step.append(round(t2-t1,2))
-                print("number call chi0_mv:  ", self.ncall_chi0_mv_ite)
-                print("Average call chi0_mv: ", int(self.ncall_chi0_mv_ite/(len(self.nn[s])*self.norbs)))
+                print("number call chi0_mv:  ", self.chi0mv_ncalls_ite)
+                print("Average call chi0_mv: ",
+                      int(self.chi0mv_ncalls_ite/(len(self.nn[s])*self.norbs)))
 
-            self.ncall_chi0_mv_total += self.ncall_chi0_mv_ite
+            self.chi0mv_ncalls += self.chi0mv_ncalls_ite
 
             # I = XVX I_aux
             inm[:,:,iw] = np.einsum('nmp,nmp->nm', self.xvx[s], sf_aux, optimize=optimize)
         snm2i.append(np.real(inm))
 
-    print("Total call chi0_mv: ", self.ncall_chi0_mv_total)
+    print("Total call chi0_mv: ", self.chi0mv_ncalls)
     self.time_gw[11] = timer();
 
     return snm2i
@@ -345,8 +343,7 @@ class gw_iter(gw):
 
   def chi0_mv(self, dvin, comega):
 
-      self.ncall_chi0_mv_ite += 1
-      
+      self.chi0mv_ncalls_ite += 1
       if self.GPU:
           return gw_chi0_mv_gpu(self, dvin, comega=comega, timing=self.chi0_timing)
       else:
@@ -687,7 +684,8 @@ class gw_iter(gw):
       print('\nConverged GW-corrected eigenvalues (Ha):\n',
         [self.mo_energy_gw[0,s][self.start_st[s]:self.finish_st[s]] for s in range(self.nspin)])
 
-    if self.write_R:    self.write_data(step='G0W0')
+    if self.write_R:
+        self.write_data(step='G0W0')
     self.write_chi0_mv_timing("gw_iter_chi0_mv.txt")
 
     return self.etot_gw()

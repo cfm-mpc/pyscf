@@ -91,8 +91,8 @@ class chi0_matvec(mf):
             print(__name__, '\t====> MO energies (ksn2e) (eV):\n{},\tType: {}'.format(self.ksn2e*HARTREE2EV,self.ksn2e.dtype))
             print(__name__, '\t====> Occupations (ksn2f):\n{},\tType: {}'.format(self.ksn2f,self.ksn2f.dtype))
 
-        self.rf0_ncalls = 0
-        self.rf0_ncalls_ite = 0
+        self.chi0mv_ncalls = 0
+        self.chi0mv_ncalls_ite = 0
         if not hasattr(self, 'pb'):
             print('no pb?')
             return
@@ -132,8 +132,8 @@ class chi0_matvec(mf):
         expect_shape=tuple([self.nspin*self.nprod])
         assert np.all(sp2v.shape == expect_shape),\
                 "{} {}".format(sp2v.shape,expect_shape)
-        self.rf0_ncalls_ite += 1
-        self.rf0_ncalls += 1
+        self.chi0mv_ncalls_ite += 1
+        self.chi0mv_ncalls += 1
 
         if self.GPU:
             return chi0_mv_gpu(self, sp2v, comega, timing=self.chi0_timing)
@@ -163,6 +163,7 @@ class chi0_matvec(mf):
     def write_chi0_mv_timing(self, fname):
 
         with open(fname, "w") as fl:
+            fl.write("# Total number call chi0_mv: {}\n".format(self.chi0mv_ncalls))
             fl.write("# step  time [s]\n")
             for it, time in enumerate(self.chi0_timing):
                 fl.write("{}: {}\n".format(it, time))
@@ -225,7 +226,7 @@ class chi0_matvec(mf):
         else:
             fname = "tddft_iter_dens_chng_nonin_chi0_mv.txt"
         self.write_chi0_mv_timing(fname)
-        print("Total number of iterations: ", self.rf0_ncalls)
+        print("Total number of iterations: ", self.chi0mv_ncalls)
         return dn, p_mat
         
     def calc_dens_Edir_omega(self, iw, nww, w, Edir, vext, veff, tmp_fname=None,
@@ -242,7 +243,7 @@ class chi0_matvec(mf):
             if abs(Exyz) < 1.0e-12:
                 continue
 
-            self.rf0_ncalls_ite = 0
+            self.chi0mv_ncalls_ite = 0
             if inter:
                 veff[:, xyz] = self.comp_veff(vext[:, xyz], w, x0=veff[:, xyz])
                 dn[xyz, :] = self.apply_rf0(veff[:, xyz], w)
@@ -254,7 +255,7 @@ class chi0_matvec(mf):
                                                                             iw,
                                                                             nww,
                                                                             w.real*eV,
-                                                                            self.rf0_ncalls_ite))
+                                                                            self.chi0mv_ncalls_ite))
 
             for xyzp in range(Edir.size):
                 Pmat[xyz, xyzp] = vext[:, xyzp].dot(dn[xyz, :])
