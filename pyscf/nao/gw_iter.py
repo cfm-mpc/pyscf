@@ -40,6 +40,7 @@ class gw_iter(gw):
     self.gw_iter_tol = kw['gw_iter_tol'] if 'gw_iter_tol' in kw else 1e-4
     self.maxiter = kw['maxiter'] if 'maxiter' in kw else 1000
     self.gw_xvx_algo = kw['gw_xvx_algo'] if 'gw_xvx_algo' in kw else "ac_blas"
+    self.use_preconditioner = kw['use_preconditioner'] if 'use_preconditioner' in kw else False
 
     self.limited_nbnd = kw['limited_nbnd'] if 'limited_nbnd' in kw else False
     if (self.limited_nbnd and min (self.vst) < 50 ):
@@ -242,7 +243,11 @@ class gw_iter(gw):
     # preconditioning could be using 1- kernel
     # not sure ...
     x0 = None
-    M0 = None #self.precond_lgmres ()
+    if self.use_preconditioner:
+        M0 = self.precond_lgmres ()
+    else:
+        M0 = None
+
     for s in range(self.nspin):
         sf_aux = np.zeros((len(self.nn[s]), self.norbs, self.nprod), dtype=self.dtypeComplex)
         inm = np.zeros((len(self.nn[s]), self.norbs, len(ww)), dtype=self.dtypeComplex)
@@ -294,10 +299,11 @@ class gw_iter(gw):
                                     x0 = None
                                 else:
                                     x0 = copy.deepcopy(prev_sol[n, m, :])
-                            sf_aux[n,m,:], exitCode = lgmres(k_c_opt, a,
-                                                             atol=self.gw_iter_tol,
-                                                             maxiter=self.maxiter,
-                                                             x0=x0, M=M0)
+                            sf_aux[n,m,:], exitCode = ligmres(k_c_opt, a,
+                                                              atol=self.gw_iter_tol,
+                                                              maxiter=self.maxiter,
+                                                              x0=x0, M=M0)
+ 
                             if exitCode != 0:
                               print("LGMRES has not achieved convergence: exitCode = {}".format(exitCode))
                 
