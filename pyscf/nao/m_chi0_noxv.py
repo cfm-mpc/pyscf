@@ -47,53 +47,47 @@ def chi0_mv(self, dvin, comega=1j*0.0, dnout=None, timing=None):
       
     return dnout
 
-def chi0_mv_gpu(self, dvin, comega=1j*0.0, timing=None):
+def chi0_mv_gpu(self, dvin, comega=1j*0.0, dnout=None, timing=None):
     """
-    TODO: nspin == 2
     """
+    
     import cupy as cp
 
-    assert self.nspin == 1
-    spin = 0
-
-    # real part
-    vdp = csr_matvec(self.cc_da_csr, dvin.real)
-    sab_re = csr_matvec(self.v_dab_trans, vdp).reshape((self.norbs,self.norbs))
-    sab_re_gpu = cp.asarray(sab_re)
-
-    nb2v = self.xocc_gpu[spin].dot(sab_re_gpu)
-    nm2v_re = nb2v.dot(self.xvrt_gpu[spin].T)
-
-    # imaginary
-    vdp = csr_matvec(self.cc_da_csr, dvin.imag)
-    sab_im = csr_matvec(self.v_dab_trans, vdp).reshape((self.norbs,self.norbs))
-    sab_im_gpu = cp.asarray(sab_im)
-
-    nb2v = self.xocc_gpu[spin].dot(sab_im_gpu)
-    nm2v_im = nb2v.dot(self.xvrt_gpu[spin].T)
-
-    div_eigenenergy(self.ksn2e_gpu[0, spin], self.ksn2f_gpu[0, spin],
-                    self.nfermi[spin], self.vstart[spin], comega,
-                    nm2v_re, nm2v_im, div_numba=self.div_numba,
-                    use_numba=self.use_numba)
-
-    # real part
-    nb2v = nm2v_re.dot(self.xvrt_gpu[spin])
-    ab2v = self.xocc_gpu[spin].T.dot(nb2v)
-    ab2v_re = cp.asnumpy(ab2v).reshape(self.norbs*self.norbs)
+    if dnout is None:
+        dnout = np.zeros_like(dvin, dtype=self.dtypeComplex)
+    sp2v  = dvin.reshape((self.nspin,self.nprod))
+    sp2dn = dnout.reshape((self.nspin,self.nprod))
     
-    vdp = csr_matvec(self.v_dab_csr, ab2v_re)
-    chi0_re = csr_matvec(self.cc_da_trans, vdp)
+    for spin in range(self.nspin):
 
-    # imag part
-    nb2v = nm2v_im.dot(self.xvrt_gpu[spin])
-    ab2v = self.xocc_gpu[spin].T.dot(nb2v)
-    ab2v_im = cp.asnumpy(ab2v).reshape(self.norbs*self.norbs)
+        # real part
+        sab = calc_sab(self.cc_da_csr, self.v_dab_trans,
+                       sp2v[spin].real, timing[0:2]).reshape((self.norbs, self.norbs))
+        sab_re_gpu = cp.asarray(sab)
+    
+        # imaginary
+        sab = calc_sab(self.cc_da_csr, self.v_dab_trans,
+                       sp2v[spin].imag, timing[2:4]).reshape((self.norbs, self.norbs))
+        sab_im_gpu = cp.asarray(sab)
 
-    vdp = csr_matvec(self.v_dab_csr, ab2v_im)
-    chi0_im = csr_matvec(self.cc_da_trans, vdp)
+        ab2v_re, ab2v_im = get_ab2v(self.xocc_gpu[spin], self.xvrt_gpu[spin],
+                                    self.vstart[spin], self.nfermi[spin],
+                                    self.norbs, self.ksn2e_gpu[0, spin],
+                                    self.ksn2f_gpu[0, spin],
+                                    sab_re_gpu, sab_im_gpu, comega, self.div_numba,
+                                    self.use_numba, timing[4:13])
 
-    return chi0_re + 1.0j*chi0_im
+        ab2v = cp.asnumpy(ab2v_re)
+        chi0_re = calc_sab(self.v_dab_csr, self.cc_da_trans, ab2v,
+                           timing[13:15])
+
+        ab2v = cp.asnumpy(ab2v_im)
+        chi0_im = calc_sab(self.v_dab_csr, self.cc_da_trans, ab2v,
+                           timing[15:17])
+
+        sp2dn[spin] = chi0_re + 1.0j*chi0_im
+ 
+    return dnout
 
 def calc_sab(mat1, mat2, vec, timing):
 

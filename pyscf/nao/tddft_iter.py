@@ -32,7 +32,6 @@ class tddft_iter(chi0_matvec):
         self.maxiter = kw['maxiter'] if 'maxiter' in kw else 1000
         self.tddft_iter_tol = kw['tddft_iter_tol'] if 'tddft_iter_tol' in kw else 1e-3
         self.res_method = kw["res_method"] if "res_method" in kw else "both"
-        assert self.tddft_iter_tol>1e-6
 
         # better to check input before to initialize calculations
         chi0_matvec.__init__(self, **kw)
@@ -97,6 +96,7 @@ class tddft_iter(chi0_matvec):
         if self.verbosity > 0:
             print(__name__,'\t====> self.xc_code:', self.xc_code)
 
+        #self.preconditionner = self.tddft_iter_preconditioning()
 
     def load_kernel_method(self, kernel_fname, kernel_format="npy",
                            kernel_path_hdf5=None, **kw):
@@ -142,34 +142,39 @@ class tddft_iter(chi0_matvec):
         This computes an effective field (scalar potential) given the external
         scalar potential
         """
-        from scipy.sparse.linalg import LinearOperator, lgmres
+        import scipy.sparse.linalg as splin
+
         nsp = self.nspin*self.nprod
 
         assert len(vext) == nsp, "{} {}".format(len(vext), nsp)
         self.comega_current = comega
-        veff_op = LinearOperator((nsp,nsp), matvec=self.vext2veff_matvec,
+        veff_op = splin.LinearOperator((nsp,nsp), matvec=self.vext2veff_matvec,
                                  dtype=self.dtypeComplex)
 
-        if self.res_method == "absolute":
-            tol = 0.0
-            atol = self.tddft_iter_tol
-        elif self.res_method == "relative":
-            tol = self.tddft_iter_tol
-            atol = 0.0
-        elif self.res_method == "both":
-            tol = self.tddft_iter_tol
-            atol = self.tddft_iter_tol
-        else:
-            raise ValueError("Unknow res_method")
-
-        resgm, info = lgmres(veff_op, np.require(vext, dtype=self.dtypeComplex,
+        resgm, info = splin.lgmres(veff_op, np.require(vext, dtype=self.dtypeComplex,
                                                  requirements='C'), 
-                             x0=x0, tol=tol, atol=atol, maxiter=self.maxiter)
+                                   x0=x0, tol=self.tddft_iter_tol,
+                                   atol=self.tddft_iter_tol,
+                                   maxiter=self.maxiter,
+                                   outer_k=3, inner_m=30)
 
         if info != 0:
             print("LGMRES Warning: info = {0}".format(info))
     
         return resgm
+
+    def tddft_iter_preconditioning(self):
+
+        import scipy.sparse as sp
+
+        nsp = self.nspin*self.nprod
+        data = np.zeros((nsp), dtype=self.dtype)
+        data.fill(1.0)
+
+        rowscols = np.arange(nsp, dtype=np.int32)
+        M = sp.coo_matrix((data, (rowscols, rowscols)), shape=(nsp, nsp),
+                          dtype=self.dtype)
+        return M.tocsr()
 
     def vext2veff_matvec(self, vin):
         self.matvec_ncalls += 1
