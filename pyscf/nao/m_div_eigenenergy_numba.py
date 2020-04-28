@@ -55,16 +55,12 @@ def div_eigenenergy_numba(n2e, n2f, nfermi, vstart, comega, nm2v_re, nm2v_im):
         nm2v_im[n, 0:n-vstart] = 0.0
 
 @cuda.jit()
-def div_eigenenergy_gpu(n2e, n2f, nfermi, vstart, comega, nm2v_re, nm2v_im,
-                        nm2v_re_new, nm2v_im_new):
+def div_eigenenergy_gpu(n2e, n2f, nfermi, vstart, comega, nm2v_re, nm2v_im):
     """
     multiply the temporary matrix by (fn - fm) (frac{1.0}{w - (Em-En) -1} -
         frac{1.0}{w + (Em - En)})
     using numba
     """
-
-    #for i in range(start, x.shape[0], stride):
-    #    out[i] = x[i] + y[i]
 
     neigv = n2e.shape[-1]
     a0 = comega.real**2 - comega.imag**2
@@ -72,8 +68,6 @@ def div_eigenenergy_gpu(n2e, n2f, nfermi, vstart, comega, nm2v_re, nm2v_im,
 
     n = cuda.blockIdx.x * cuda.blockDim.x + cuda.threadIdx.x
     m = cuda.blockIdx.y * cuda.blockDim.y + cuda.threadIdx.y
-
-    # Need an old array to keep track!!
 
     if n < nfermi:
         en = n2e[n]
@@ -88,13 +82,16 @@ def div_eigenenergy_gpu(n2e, n2f, nfermi, vstart, comega, nm2v_re, nm2v_im,
             factor = 2*(fn - fm)*(em - en)
             den = a**2 + b**2
 
-            nm2v_re_new[n, m] = factor*(a*nm2v_re[n, m] + b*nm2v_im[n, m])/den
-            nm2v_im_new[n, m] = factor*(a*nm2v_im[n, m] - b*nm2v_re[n, m])/den
+            nm2v_re_new = factor*(a*nm2v_re[n, m] + b*nm2v_im[n, m])/den
+            nm2v_im_new = factor*(a*nm2v_im[n, m] - b*nm2v_re[n, m])/den
+
+            nm2v_re[n, m] = nm2v_re_new
+            nm2v_im[n, m] = nm2v_im_new
 
     if n > vstart and n < nfermi:
         if m < n-vstart:
-            nm2v_re_new[n, m] = 0.0
-            nm2v_im_new[n, m] = 0.0
+            nm2v_re[n, m] = 0.0
+            nm2v_im[n, m] = 0.0
 
 @nb.jit(nopython=True)
 def mat_mul_numba(a, b):

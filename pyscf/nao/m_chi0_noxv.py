@@ -109,19 +109,14 @@ def div_eigenenergy(ksn2e, ksn2f, nf, vs, comega, nm2v_re, nm2v_im,
     
     if use_numba and div_numba is not None:
         if GPU:
-            import cupy
             from pyscf.nao.m_div_eigenenergy_numba import div_eigenenergy_gpu
 
             threadsperblock = (32, 32)
             blockspergrid = (int(np.ceil(nm2v_re.shape[0]/threadsperblock[0])),
                              int(np.ceil(nm2v_re.shape[1]/threadsperblock[1])))
             
-            nm2v_re_old = cupy.copy(nm2v_re)
-            nm2v_im_old = cupy.copy(nm2v_im)
             div_eigenenergy_gpu[blockspergrid, threadsperblock](ksn2e, ksn2f,
                                                                 nf, vs, comega,
-                                                                nm2v_re_old,
-                                                                nm2v_im_old,
                                                                 nm2v_re, nm2v_im)
         else:
             div_numba(ksn2e, ksn2f, nf, vs, comega,
