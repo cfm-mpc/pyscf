@@ -210,13 +210,14 @@ class chi0_matvec(mf):
         Edir = Eext/np.dot(Eext, Eext)
     
         vext = np.zeros((self.nspin*self.nprod, 3), dtype=self.moms1.dtype)
+        veff = np.zeros((self.nspin*self.nprod, 3), dtype=self.moms1.dtype)
         for ixyz in range(3):
             vext[:, ixyz] = np.concatenate([self.moms1[:, ixyz] for s in range(self.nspin)])
 
         for iw, comega in enumerate(comegas):
 
             dn[:, iw, :], p_mat[:, :, iw] = \
-                    self.calc_dens_Edir_omega(iw, nww, comega, Edir, vext,
+                    self.calc_dens_Edir_omega(iw, nww, comega, Edir, vext, veff,
                                               tmp_fname=tmp_fname, inter=inter)
 
         if inter:
@@ -227,7 +228,7 @@ class chi0_matvec(mf):
         print("Total number of iterations: ", self.rf0_ncalls)
         return dn, p_mat
         
-    def calc_dens_Edir_omega(self, iw, nww, w, Edir, vext, tmp_fname=None,
+    def calc_dens_Edir_omega(self, iw, nww, w, Edir, vext, veff, tmp_fname=None,
                              inter=False):
         """
         Calculate the density change and polarizability for a specific frequency
@@ -243,8 +244,8 @@ class chi0_matvec(mf):
 
             self.rf0_ncalls_ite = 0
             if inter:
-                veff = self.comp_veff(vext[:, xyz], w)
-                dn[xyz, :] = self.apply_rf0(veff, w)
+                veff[:, xyz] = self.comp_veff(vext[:, xyz], w, x0=veff[:, xyz])
+                dn[xyz, :] = self.apply_rf0(veff[:, xyz], w)
             else:
                 dn[xyz, :] = self.apply_rf0(vext[:, xyz], w)
 
