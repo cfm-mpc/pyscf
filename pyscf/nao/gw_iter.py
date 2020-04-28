@@ -230,7 +230,8 @@ class gw_iter(gw):
     self.time_gw[10] = timer();    
     ww = 1j*self.ww_ia
 
-    if not hasattr(self, 'xvx'): self.xvx = self.gw_xvx(self.gw_xvx_algo)
+    if not hasattr(self, 'xvx'):
+        self.xvx = self.gw_xvx(self.gw_xvx_algo)
 
     snm2i = []
     # convert k_c as full matrix into Operator
@@ -241,7 +242,7 @@ class gw_iter(gw):
     # preconditioning could be using 1- kernel
     # not sure ...
     x0 = None
-    M0 = self.precond_lgmres ()
+    M0 = None #self.precond_lgmres ()
     for s in range(self.nspin):
         sf_aux = np.zeros((len(self.nn[s]), self.norbs, self.nprod), dtype=self.dtypeComplex)
         inm = np.zeros((len(self.nn[s]), self.norbs, len(ww)), dtype=self.dtypeComplex)

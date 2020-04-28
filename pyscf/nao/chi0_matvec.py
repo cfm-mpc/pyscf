@@ -210,7 +210,7 @@ class chi0_matvec(mf):
         Edir = Eext/np.dot(Eext, Eext)
     
         vext = np.zeros((self.nspin*self.nprod, 3), dtype=self.moms1.dtype)
-        veff = np.zeros((self.nspin*self.nprod, 3), dtype=self.moms1.dtype)
+        veff = np.zeros((self.nspin*self.nprod, 3), dtype=self.dtypeComplex)
         for ixyz in range(3):
             vext[:, ixyz] = np.concatenate([self.moms1[:, ixyz] for s in range(self.nspin)])
 

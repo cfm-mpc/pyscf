@@ -75,7 +75,8 @@ def chi0_mv_gpu(self, dvin, comega=1j*0.0, dnout=None, timing=None):
                                     self.norbs, self.ksn2e_gpu[0, spin],
                                     self.ksn2f_gpu[0, spin],
                                     sab_re_gpu, sab_im_gpu, comega, self.div_numba,
-                                    self.use_numba, timing[4:13])
+                                    self.use_numba, timing[4:13],
+                                    GPU=True)
 
         ab2v = cp.asnumpy(ab2v_re)
         chi0_re = calc_sab(self.v_dab_csr, self.cc_da_trans, ab2v,
@@ -104,11 +105,27 @@ def calc_sab(mat1, mat2, vec, timing):
     return sab
 
 def div_eigenenergy(ksn2e, ksn2f, nf, vs, comega, nm2v_re, nm2v_im,
-                    div_numba=None, use_numba=False):
+                    div_numba=None, use_numba=False, GPU=False):
     
     if use_numba and div_numba is not None:
-        div_numba(ksn2e, ksn2f, nf, vs, comega,
-                  nm2v_re, nm2v_im)
+        if GPU:
+            import cupy
+            from pyscf.nao.m_div_eigenenergy_numba import div_eigenenergy_gpu
+
+            threadsperblock = (32, 32)
+            blockspergrid = (int(np.ceil(nm2v_re.shape[0]/threadsperblock[0])),
+                             int(np.ceil(nm2v_re.shape[1]/threadsperblock[1])))
+            
+            nm2v_re_old = cupy.copy(nm2v_re)
+            nm2v_im_old = cupy.copy(nm2v_im)
+            div_eigenenergy_gpu[blockspergrid, threadsperblock](ksn2e, ksn2f,
+                                                                nf, vs, comega,
+                                                                nm2v_re_old,
+                                                                nm2v_im_old,
+                                                                nm2v_re, nm2v_im)
+        else:
+            div_numba(ksn2e, ksn2f, nf, vs, comega,
+                      nm2v_re, nm2v_im)
     else:
         for n, (en, fn) in enumerate(zip(ksn2e[:nf], ksn2f[:nf])):
             for m, (em, fm) in enumerate(zip(ksn2e[vs:], ksn2f[vs:])):
@@ -124,7 +141,7 @@ def div_eigenenergy(ksn2e, ksn2f, nf, vs, comega, nm2v_re, nm2v_im,
                 nm2v_re[n,m], nm2v_im[n,m] = 0.0, 0.0
 
 def get_ab2v(xocc, xvrt, vstart, nfermi, norbs, ksn2e, ksn2f, sab_re, sab_im, comega,
-             div_numba, use_numba, timing):
+             div_numba, use_numba, timing, GPU=False):
 
     t1 = timer()
     #nb2v = self.gemm(1.0, self.xocc[spin], sab_re)
@@ -152,8 +169,8 @@ def get_ab2v(xocc, xvrt, vstart, nfermi, norbs, ksn2e, ksn2f, sab_re, sab_im, co
 
     t1 = timer()
     div_eigenenergy(ksn2e, ksn2f, nfermi, vstart, comega, nm2v_re,
-                    nm2v_im, div_numba=div_numba,
-                    use_numba=use_numba)
+                    nm2v_im, div_numba=div_numba, use_numba=use_numba,
+                    GPU=GPU)
     t2 = timer()
     timing[4] += t2 - t1
 

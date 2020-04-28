@@ -52,18 +52,22 @@ def gw_chi0_mv_gpu(self, dvin, comega=1j*0.0, timing=None):
     # real part
     sab_re = calc_sab(self.cc_da_csr, self.v_dab_trans,
                       dvin.real, timing[0:2]).reshape(self.norbs,self.norbs)
+    t1 = timer()
     sab_re_gpu = cp.asarray(sab_re)
+    t2 = timer()
+    timing[1] += t2-t1
 
     # imaginary
     sab_im = calc_sab(self.cc_da_csr, self.v_dab_trans,
                       dvin.imag, timing[2:4]).reshape(self.norbs,self.norbs)
+    t1 = timer()
     sab_im_gpu = cp.asarray(sab_im)
+    t2 = timer()
+    timing[3] += t2-t1
 
-    ab2v_re_gpu = None
-    ab2v_im_gpu = None
     for spin in range(self.nspin):
 
-        if ab2v_re_gpu is None:
+        if spin == 0:
             ab2v_re_gpu, ab2v_im_gpu = get_ab2v(self.xocc_gpu[spin],
                                                 self.xvrt_gpu[spin],
                                                 self.vstart[spin], self.nfermi[spin],
@@ -71,7 +75,8 @@ def gw_chi0_mv_gpu(self, dvin, comega=1j*0.0, timing=None):
                                                 self.ksn2f_gpu[0, spin],
                                                 sab_re_gpu, sab_im_gpu, comega,
                                                 self.div_numba,
-                                                self.use_numba, timing[4:13])
+                                                self.use_numba, timing[4:13],
+                                                GPU=True)
         else:
             matre, matim = get_ab2v(self.xocc_gpu[spin], self.xvrt_gpu[spin],
                                     self.vstart[spin], self.nfermi[spin],
@@ -79,16 +84,23 @@ def gw_chi0_mv_gpu(self, dvin, comega=1j*0.0, timing=None):
                                     self.ksn2f_gpu[0, spin],
                                     sab_re_gpu, sab_im_gpu, comega,
                                     self.div_numba,
-                                    self.use_numba, timing[4:13])
+                                    self.use_numba, timing[4:13],
+                                    GPU=True)
             ab2v_re_gpu += matre
             ab2v_im_gpu += matim
 
     # real part
-    ab2v_re = cp.asnumpy(ab2v_re_gpu).reshape(self.norbs*self.norbs)
+    t1 = timer()
+    ab2v_re = cp.asnumpy(ab2v_re_gpu)
+    t2 = timer()
+    timing[13] += t2-t1
     chi0_re = calc_sab(self.v_dab_csr, self.cc_da_trans, ab2v_re, timing[13:15])
 
     # imag part
-    ab2v_im = cp.asnumpy(ab2v_im_gpu).reshape(self.norbs*self.norbs)
+    t1 = timer()
+    ab2v_im = cp.asnumpy(ab2v_im_gpu)
+    t2 = timer()
+    timing[15] += t2-t1
     chi0_im = calc_sab(self.v_dab_csr, self.cc_da_trans, ab2v_im, timing[15:17])
 
     return chi0_re + 1.0j*chi0_im
