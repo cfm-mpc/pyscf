@@ -152,11 +152,10 @@ class tddft_iter(chi0_matvec):
                                  dtype=self.dtypeComplex)
 
         resgm, info = splin.lgmres(veff_op, np.require(vext, dtype=self.dtypeComplex,
-                                                 requirements='C'), 
-                                   x0=x0, tol=self.tddft_iter_tol,
+                                                 requirements='C'), x0=x0,
+                                   tol=self.tddft_iter_tol,
                                    atol=self.tddft_iter_tol,
-                                   maxiter=self.maxiter,
-                                   outer_k=3, inner_m=30)
+                                   maxiter=self.maxiter)
 
         if info != 0:
             print("LGMRES Warning: info = {0}".format(info))
