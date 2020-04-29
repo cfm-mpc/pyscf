@@ -99,9 +99,25 @@ def gw_xvx_ac_sparse(self):
     of larger systems, however, the computational cost to get the sparse
     version of the atom-centered product is very high (up to 30% of the full
     simulation time of a GW0 run).
+
+
+    WARNING
+    -------
+    This method is experimental. For production run on large system, the
+    dp_sparse method will be much more efficient in computational time and
+    memory comsumption.
     """
 
     from pyscf.nao.m_rf0_den import calc_XVX
+
+    try:
+        import sparse
+    except:
+        mess = """
+        Could not import the sparse package required by the ac_sparse method.
+        See https://sparse.pydata.org/en/latest/
+        """
+        raise ImportError(mess)
 
     xvx = []
 
@@ -195,8 +211,6 @@ def gw_xvx_dp_sparse(self):
 
     return gw_xvx_sparse_dp(self)
 
-
-
 def gw_xvx_dp_ndcoo (self):
 
     from pyscf.nao import ndcoo
@@ -245,38 +259,54 @@ if __name__=='__main__':
     mf.kernel()
 
     gw = gw_iter(mf=mf, gto=mol)
-    timing = np.zeros(6)
+    
+    timing = np.zeros(7)
+
     t1 = timer()
     ref = gw.gw_xvx(algo='simple')
     t2 = timer()
     timing[0] += round(t2-t1,3)
+    
     t1 = timer()
     ac = gw.gw_xvx(algo='ac')
     t2 = timer()
     timing[1] += round(t2-t1,3)
+    
     t1 = timer()
     ac_blas = gw.gw_xvx(algo='ac_blas')
     t2 = timer()
     timing[2] += round(t2-t1,3)
+    
     t1 = timer()
-    #ac_sparse= gw.gw_xvx(algo='ac_sparse')
+    ac_sparse = gw.gw_xvx(algo='ac_sparse')
     t2 = timer()
     timing[3] += round(t2-t1,3)
+    
     t1 = timer()
     dp= gw.gw_xvx(algo='dp')
     t2 = timer()
     timing[4] += round(t2-t1,3)
+    
     t1 = timer()
     dp_coo= gw.gw_xvx(algo='dp_coo')
     t2 = timer()
     timing[5] += round(t2-t1,3)
+
     t1 = timer()
-    #dp_sparse= gw.gw_xvx(algo='dp_sparse')
+    dp_sparse = gw.gw_xvx(algo='dp_sparse')
+    t2 = timer()
+    timing[6] += round(t2-t1,3)
 
     for s in range(gw.nspin):
-            print('Spin {}, atom-centered with ref                  : {}, timing {} sec'.format(s+1,np.allclose(ref[s],ac[s],atol=1e-15),timing[1]))
-            print('Spin {}, atom-centered (BLAS) with ref           : {}, timing {} sec'.format(s+1,np.allclose(ref[s],ac_blas[s],atol=1e-15),timing[2]))
-            #print('Spin {}, sparse atom-centered with ref          : {}, timing {} sec'.format(s+1,np.allclose(ref[s],ac_sparse[s],atol=1e-15),timing[3]))
-            print('Spin {}, dominant product with ref               : {}, timing {} sec'.format(s+1,np.allclose(ref[s],dp[s],atol=1e-15),timing[4]))
-            print('Spin {}, sparse_dominant product-ndCoo with ref  : {}, timing {} sec'.format(s+1,np.allclose(ref[s],dp_coo[s],atol=1e-15),timing[5]))
-            #print('Spin {}, sparse_dominant product-numba with ref : {}, timing {} sec'.format(s+1,np.allclose(ref[s],dp_sparse[s],atol=1e-15)))
+        print('Spin {}, atom-centered with ref                  : {}, timing {} sec'.format(s+1,
+            np.allclose(ref[s], ac[s], atol=1e-15), timing[1]))
+        print('Spin {}, atom-centered (BLAS) with ref           : {}, timing {} sec'.format(s+1,
+            np.allclose(ref[s],ac_blas[s],atol=1e-15),timing[2]))
+        print('Spin {}, sparse atom-centered with ref           : {}, timing {} sec'.format(s+1,
+            np.allclose(ref[s], ac_sparse[s], atol=1e-15),timing[3]))
+        print('Spin {}, dominant product with ref               : {}, timing {} sec'.format(s+1,
+            np.allclose(ref[s], dp[s], atol=1e-15),timing[4]))
+        print('Spin {}, sparse_dominant product-ndCoo with ref  : {}, timing {} sec'.format(s+1,
+            np.allclose(ref[s], dp_coo[s], atol=1e-15),timing[5]))
+        print('Spin {}, sparse_dominant product-numba with ref  : {}, timing {} sec'.format(s+1,
+            np.allclose(ref[s], dp_sparse[s], atol=1e-15), timing[6]))
