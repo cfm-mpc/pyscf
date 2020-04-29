@@ -31,8 +31,12 @@ def chi0_mv(self, dvin, comega=1j*0.0, dnout=None, timing=None):
         sab_im = calc_sab(self.cc_da_csr, self.v_dab_trans,
                        sp2v[spin].imag, timing[2:4]).reshape((self.norbs,self.norbs))
 
-        ab2v_re, ab2v_im = get_ab2v(self, sab_re, sab_im, spin, comega,
-                                    timing[4:13])
+        ab2v_re, ab2v_im = get_ab2v(self.xocc[spin], self.xvrt[spin],
+                                    self.vstart[spin], self.nfermi[spin],
+                                    self.norbs, self.ksn2e[0, spin],
+                                    self.ksn2f[0, spin],
+                                    sab_re, sab_im, comega, self.div_numba,
+                                    self.use_numba, timing[4:13])
 
         chi0_re = calc_sab(self.v_dab_csr, self.cc_da_trans, ab2v_re,
                            timing[13:15])
@@ -43,63 +47,48 @@ def chi0_mv(self, dvin, comega=1j*0.0, dnout=None, timing=None):
       
     return dnout
 
-#
-#
-#
-def chi0_mv_gpu(self, v, comega=1j*0.0):
-# check with nspin=2
+def chi0_mv_gpu(self, dvin, comega=1j*0.0, dnout=None, timing=None):
     """
-        Apply the non-interacting response function to a vector using gpu for
-        matrix-matrix multiplication
     """
-    assert self.nspin == 1
     
-    if self.dtype != np.float32:
-        print(self.dtype)
-        raise ValueError("GPU version only with single precision")
+    import cupy as cp
 
-    # real part
-    sab = calc_sab(self.cc_da_csr, self.v_dab_trans,
-                   v.real).reshape([self.norbs, self.norbs])
-    self.td_GPU.cpy_sab_to_device(sab, Async = 1)
-    self.td_GPU.calc_nb2v_from_sab(reim=0)
-
-    # nm2v_real
-    self.td_GPU.calc_nm2v_real()
-
-    # start imaginary part
-    sab = calc_sab(self.cc_da_csr, self.v_dab_trans,
-                   v.imag).reshape([self.norbs, self.norbs])
-    self.td_GPU.cpy_sab_to_device(sab, Async = 2)
-
-    self.td_GPU.calc_nb2v_from_sab(reim=1)
-    # nm2v_imag
-    self.td_GPU.calc_nm2v_imag()
-
-    self.td_GPU.div_eigenenergy_gpu(comega)
-
-    # real part
-    self.td_GPU.calc_nb2v_from_nm2v_real()
-    self.td_GPU.calc_sab(reim=0)
-    self.td_GPU.cpy_sab_to_host(sab, Async = 1)
-
-    # start calc_ imag to overlap with cpu calculations
-    self.td_GPU.calc_nb2v_from_nm2v_imag()
-
-    vdp = csr_matvec(self.v_dab_csr, sab)
+    if dnout is None:
+        dnout = np.zeros_like(dvin, dtype=self.dtypeComplex)
+    sp2v  = dvin.reshape((self.nspin,self.nprod))
+    sp2dn = dnout.reshape((self.nspin,self.nprod))
     
-    self.td_GPU.calc_sab(reim=1)
+    for spin in range(self.nspin):
 
-    # finish real part 
-    chi0_re = csr_matvec(self.cc_da_trans, vdp)
+        # real part
+        sab = calc_sab(self.cc_da_csr, self.v_dab_trans,
+                       sp2v[spin].real, timing[0:2]).reshape((self.norbs, self.norbs))
+        sab_re_gpu = cp.asarray(sab)
+    
+        # imaginary
+        sab = calc_sab(self.cc_da_csr, self.v_dab_trans,
+                       sp2v[spin].imag, timing[2:4]).reshape((self.norbs, self.norbs))
+        sab_im_gpu = cp.asarray(sab)
 
-    # imag part
-    self.td_GPU.cpy_sab_to_host(sab)
+        ab2v_re, ab2v_im = get_ab2v(self.xocc_gpu[spin], self.xvrt_gpu[spin],
+                                    self.vstart[spin], self.nfermi[spin],
+                                    self.norbs, self.ksn2e_gpu[0, spin],
+                                    self.ksn2f_gpu[0, spin],
+                                    sab_re_gpu, sab_im_gpu, comega, self.div_numba,
+                                    self.use_numba, timing[4:13],
+                                    GPU=True)
 
-    vdp = csr_matvec(self.v_dab_csr, sab)
-    chi0_im = csr_matvec(self.cc_da_trans, vdp)
+        ab2v = cp.asnumpy(ab2v_re)
+        chi0_re = calc_sab(self.v_dab_csr, self.cc_da_trans, ab2v,
+                           timing[13:15])
 
-    return chi0_re + 1.0j*chi0_im
+        ab2v = cp.asnumpy(ab2v_im)
+        chi0_im = calc_sab(self.v_dab_csr, self.cc_da_trans, ab2v,
+                           timing[15:17])
+
+        sp2dn[spin] = chi0_re + 1.0j*chi0_im
+ 
+    return dnout
 
 def calc_sab(mat1, mat2, vec, timing):
 
@@ -115,15 +104,26 @@ def calc_sab(mat1, mat2, vec, timing):
 
     return sab
 
-def div_eigenenergy(ksn2e, ksn2f, spin, nf, vs, comega, nm2v_re, nm2v_im,
-                    div_numba=None, use_numba=False):
+def div_eigenenergy(ksn2e, ksn2f, nf, vs, comega, nm2v_re, nm2v_im,
+                    div_numba=None, use_numba=False, GPU=False):
     
     if use_numba and div_numba is not None:
-        div_numba(ksn2e[0, spin], ksn2f[0, spin], nf, vs, comega,
-                  nm2v_re, nm2v_im)
+        if GPU:
+            from pyscf.nao.m_div_eigenenergy_numba import div_eigenenergy_gpu
+
+            threadsperblock = (32, 32)
+            blockspergrid = (int(np.ceil(nm2v_re.shape[0]/threadsperblock[0])),
+                             int(np.ceil(nm2v_re.shape[1]/threadsperblock[1])))
+            
+            div_eigenenergy_gpu[blockspergrid, threadsperblock](ksn2e, ksn2f,
+                                                                nf, vs, comega,
+                                                                nm2v_re, nm2v_im)
+        else:
+            div_numba(ksn2e, ksn2f, nf, vs, comega,
+                      nm2v_re, nm2v_im)
     else:
-        for n, (en, fn) in enumerate(zip(ksn2e[0, spin, :nf], ksn2f[0, spin, :nf])):
-            for m, (em, fm) in enumerate(zip(ksn2e[0, spin, vs:], ksn2f[0, spin, vs:])):
+        for n, (en, fn) in enumerate(zip(ksn2e[:nf], ksn2f[:nf])):
+            for m, (em, fm) in enumerate(zip(ksn2e[vs:], ksn2f[vs:])):
                 nm2v = nm2v_re[n, m] + 1.0j*nm2v_im[n, m]
                 nm2v = nm2v * (fn - fm) * \
                 ( 1.0 / (comega - (em - en)) - 1.0 / (comega + (em - en)) )
@@ -135,63 +135,63 @@ def div_eigenenergy(ksn2e, ksn2f, spin, nf, vs, comega, nm2v_re, nm2v_im,
             for m in range(n-vs):
                 nm2v_re[n,m], nm2v_im[n,m] = 0.0, 0.0
 
-def get_ab2v(self, sab_re, sab_im, spin, comega, timing):
+def get_ab2v(xocc, xvrt, vstart, nfermi, norbs, ksn2e, ksn2f, sab_re, sab_im, comega,
+             div_numba, use_numba, timing, GPU=False):
 
     t1 = timer()
     #nb2v = self.gemm(1.0, self.xocc[spin], sab_re)
-    nb2v = self.xocc[spin].dot(sab_re)
+    nb2v = xocc.dot(sab_re)
     t2 = timer()
     timing[0] += t2 - t1
 
     t1 = timer()
     #nm2v_re = self.gemm(1.0, nb2v, self.xvrt[spin], trans_b=1)
-    nm2v_re = nb2v.dot(self.xvrt[spin].T)
+    nm2v_re = nb2v.dot(xvrt.T)
     t2 = timer()
     timing[1] += t2 - t1
 
     t1 = timer()
     #nb2v = self.gemm(1.0, self.xocc[spin], sab_im)
-    nb2v = self.xocc[spin].dot(sab_im)
+    nb2v = xocc.dot(sab_im)
     t2 = timer()
     timing[2] += t2 - t1
     
     t1 = timer()
     #nm2v_im = self.gemm(1.0, nb2v, self.xvrt[spin], trans_b=1)
-    nm2v_im = nb2v.dot(self.xvrt[spin].T)
+    nm2v_im = nb2v.dot(xvrt.T)
     t2 = timer()
     timing[3] += t2 - t1
 
     t1 = timer()
-    vs, nf = self.vstart[spin], self.nfermi[spin]
-    div_eigenenergy(self.ksn2e, self.ksn2f, spin, nf, vs, comega, nm2v_re,
-                    nm2v_im, div_numba=self.div_numba,
-                    use_numba=self.use_numba)
+    div_eigenenergy(ksn2e, ksn2f, nfermi, vstart, comega, nm2v_re,
+                    nm2v_im, div_numba=div_numba, use_numba=use_numba,
+                    GPU=GPU)
     t2 = timer()
     timing[4] += t2 - t1
 
     # real part
     t1 = timer()
     #nb2v = self.gemm(1.0, nm2v_re, self.xvrt[spin])
-    nb2v = nm2v_re.dot(self.xvrt[spin])
+    nb2v = nm2v_re.dot(xvrt)
     t2 = timer()
     timing[5] += t2 - t1
 
     t1 = timer()
     #ab2v_re = self.gemm(1.0, self.xocc[spin], nb2v, trans_a=1).reshape(self.norbs*self.norbs)
-    ab2v_re = self.xocc[spin].T.dot(nb2v).reshape(self.norbs*self.norbs)
+    ab2v_re = xocc.T.dot(nb2v).reshape(norbs*norbs)
     t2 = timer()
     timing[6] += t2 - t1
 
     # imag part
     t1 = timer()
     #nb2v = self.gemm(1.0, nm2v_im, self.xvrt[spin])
-    nb2v = nm2v_im.dot(self.xvrt[spin])
+    nb2v = nm2v_im.dot(xvrt)
     t2 = timer()
     timing[7] += t2 - t1
 
     t1 = timer()
     #ab2v_im = self.gemm(1.0, self.xocc[spin], nb2v, trans_a=1).reshape(self.norbs*self.norbs)
-    ab2v_im = self.xocc[spin].T.dot(nb2v).reshape(self.norbs*self.norbs)
+    ab2v_im = xocc.T.dot(nb2v).reshape(norbs*norbs)
     t2 = timer()
     timing[8] += t2 - t1
 

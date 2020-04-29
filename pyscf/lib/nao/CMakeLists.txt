@@ -21,20 +21,3 @@ set_target_properties(nao PROPERTIES
   COMPILE_FLAGS ${OpenMP_C_FLAGS}
   LINK_FLAGS ${OpenMP_C_FLAGS})
 target_link_libraries(nao ${FFTW_LIBRARIES} ${BLAS_LIBRARIES} ${LAPACK_LIBRARIES})
-
-
-find_package(CUDA)
-
-if(CUDA_FOUND)
-  INCLUDE(FindCUDA)
-
-  set(CUDA_LIBRARIES "-L${CUDA_TOOLKIT_ROOT_DIR}/lib64 -lcuda -lcudart -lcublas -lcudadevrt -lstdc++")
-  set(CUDA_HOST_COMPILER "${HOST_COMPILER}")
-  set(CUDA_PROPAGATE_HOST_FLAGS OFF)
-  set(CUDA_NVCC_FLAGS "${CUDA_FLAGS}")
-
-  message("CUDA FLAGS: ${CUDA_NVCC_FLAGS}")
-  message("CUDA LIB: ${CUDA_LIBRARIES}")
-
-  add_subdirectory(nao_gpu)
-endif()
