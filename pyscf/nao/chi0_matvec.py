@@ -5,6 +5,7 @@ from numpy import array, argmax
 from scipy.sparse import csr_matrix, coo_matrix
 from timeit import default_timer as timer
 from scipy.linalg import blas
+import scipy.sparse.linalg as splin
 
 from pyscf.nao import mf
 from pyscf.nao.m_chi0_noxv import chi0_mv_gpu, chi0_mv
@@ -22,6 +23,27 @@ class chi0_matvec(mf):
             self.use_initial_guess_ite_solver = kw["use_initial_guess_ite_solver"]
         else:
             self.use_initial_guess_ite_solver = False
+
+        krylov_solvers = {"lgmres": splin.lgmres,
+                          "gmres": splin.gmres,
+                          "gcrotmk": splin.gcrotmk,
+                          "qmr": splin.qmr,
+                          "minres": splin.minres,
+                          "bicgstab": splin.bicgstab,
+                          "bicg": splin.bicg,
+                          "cg": splin.cg,
+                          "cgs": splin.cgs}
+        if "krylov_solver" in kw:
+            self.krylov_solver = krylov_solvers[kw["krylov_solver"]]
+        else:
+            self.krylov_solver = krylov_solvers["lgmres"]
+
+        if "krylov_options" in kw:
+            self.krylov_options = kw["krylov_options"]
+        else:
+            self.krylov_options = {"tol": 1.0e-3,
+                                   "atol": 1.0e-3,
+                                   "maxiter": 1000}
 
         mf.__init__(self, **kw)
 
