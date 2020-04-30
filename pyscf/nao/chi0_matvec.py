@@ -136,12 +136,29 @@ class chi0_matvec(mf):
         except RuntimeError as err:
             raise RuntimeError("Could not import cupy: {}".format(err))
 
+        block_size = 32
+        self.block_size = [] # np.array([32, 32], dtype=np.int32) # threads by block
+        self.grid_size = [] #np.array([0, 0], dtype=np.int32) # number of blocks
+
         self.xocc_gpu = []
         self.xvrt_gpu = []
         self.ksn2e_gpu = cp.asarray(self.ksn2e)
         self.ksn2f_gpu = cp.asarray(self.ksn2f)
 
         for spin in range(self.nspin):
+            dimensions = [self.nfermi[spin], self.nprod]
+            self.block_size.append([block_size, block_size])
+            self.grid_size.append([0, 0])
+            for i in range(2):
+                if dimensions[i] <= block_size:
+                    self.block_size[spin][i] = dimensions[i]
+                    self.grid_size[spin][i] = 1
+                else:
+                    self.grid_size[spin][i] = dimensions[i]//self.block_size[spin][i] + 1
+
+            print("spin {}: block_size: ({}, {}); grid_size: ({}, {})".format(
+                spin, self.block_size[spin][0], self.block_size[spin][1],
+                self.grid_size[spin][0], self.grid_size[spin][1]))
             self.xocc_gpu.append(cp.asarray(self.xocc[spin]))
             self.xvrt_gpu.append(cp.asarray(self.xvrt[spin]))
 
