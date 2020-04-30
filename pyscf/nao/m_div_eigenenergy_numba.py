@@ -69,24 +69,22 @@ def div_eigenenergy_gpu(n2e, n2f, nfermi, vstart, comega, nm2v_re, nm2v_im):
     n = cuda.blockIdx.x * cuda.blockDim.x + cuda.threadIdx.x
     m = cuda.blockIdx.y * cuda.blockDim.y + cuda.threadIdx.y
 
-    if n < nfermi:
+    if n < nfermi and m < neigv-vstart:
         en = n2e[n]
         fn = n2f[n]
 
-        if m < neigv-vstart:
+        em = n2e[m+vstart]
+        fm = n2f[m+vstart]
 
-            em = n2e[m+vstart]
-            fm = n2f[m+vstart]
+        a = a0 - (em -en)**2
+        factor = 2*(fn - fm)*(em - en)
+        den = a**2 + b**2
 
-            a = a0 - (em -en)**2
-            factor = 2*(fn - fm)*(em - en)
-            den = a**2 + b**2
+        nm2v_re_new = factor*(a*nm2v_re[n, m] + b*nm2v_im[n, m])/den
+        nm2v_im_new = factor*(a*nm2v_im[n, m] - b*nm2v_re[n, m])/den
 
-            nm2v_re_new = factor*(a*nm2v_re[n, m] + b*nm2v_im[n, m])/den
-            nm2v_im_new = factor*(a*nm2v_im[n, m] - b*nm2v_re[n, m])/den
-
-            nm2v_re[n, m] = nm2v_re_new
-            nm2v_im[n, m] = nm2v_im_new
+        nm2v_re[n, m] = nm2v_re_new
+        nm2v_im[n, m] = nm2v_im_new
 
     if n > vstart and n < nfermi:
         if m < n-vstart:
