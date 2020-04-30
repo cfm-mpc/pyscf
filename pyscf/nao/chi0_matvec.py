@@ -45,15 +45,22 @@ class chi0_matvec(mf):
 
         assert isinstance(self.eps, float)
 
-        self.div_numba = None
         if self.GPU:
             if not self.use_numba:
                 raise ValueError("GPU calculations require Numba")
-            from pyscf.nao.m_div_eigenenergy_numba import div_eigenenergy_gpu
-            self.div_numba = div_eigenenergy_gpu
+
+            if self.dtype == np.float32:
+                from pyscf.nao.m_div_eigenenergy_numba import div_eigenenergy_gpu_float32
+                self.div_numba = div_eigenenergy_gpu_float32
+            else:
+                from pyscf.nao.m_div_eigenenergy_numba import div_eigenenergy_gpu_float64
+                self.div_numba = div_eigenenergy_gpu_float64
+
         elif self.use_numba:
             from pyscf.nao.m_div_eigenenergy_numba import div_eigenenergy_numba
             self.div_numba = div_eigenenergy_numba
+        else:
+            self.div_numba = None
 
         # deallocate hsx
         if hasattr(self, 'hsx') and self.dealloc_hsx: self.hsx.deallocate()

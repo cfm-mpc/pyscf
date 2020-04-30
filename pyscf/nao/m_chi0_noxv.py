@@ -111,11 +111,12 @@ def div_eigenenergy(ksn2e, ksn2f, nf, vs, comega, nm2v_re, nm2v_im,
     
     if use_numba and div_numba is not None:
         if GPU:
-            from pyscf.nao.m_div_eigenenergy_numba import div_eigenenergy_gpu
 
-            div_eigenenergy_gpu[blockspergrid, threadsperblock](ksn2e, ksn2f,
-                                                                nf, vs, comega,
-                                                                nm2v_re, nm2v_im)
+            div_numba[blockspergrid, threadsperblock](ksn2e, ksn2f,
+                                                      nf, vs,
+                                                      comega.real,
+                                                      comega.imag,
+                                                      nm2v_re, nm2v_im)
         else:
             div_numba(ksn2e, ksn2f, nf, vs, comega,
                       nm2v_re, nm2v_im)
