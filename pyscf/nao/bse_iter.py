@@ -191,15 +191,13 @@ class bse_iter(gw):
         The operator (1 - K L0) is named self.sext2seff_matvec """
     
     from scipy.sparse.linalg import LinearOperator
-    from scipy.sparse.linalg import lgmres as gmres_alias
-    #from spipy.sparse.linalg import gmres as gmres_alias
     nsnn = self.nspin*self.norbs2
     assert sext.size==nsnn
     
     self.comega_current = comega
     op = LinearOperator((nsnn,nsnn), matvec=self.sext2seff_matvec, dtype=self.dtypeComplex)
     sext_shape = np.require(sext.reshape(nsnn), dtype=self.dtypeComplex, requirements='C')
-    resgm,info = gmres_alias(op, sext_shape, tol=self.tddft_iter_tol)
+    resgm,info = self.krylov_solver(op, sext_shape, **self.krylov_options)
     return (resgm.reshape(-1),info)
 
   def sext2seff_matvec(self, sab):

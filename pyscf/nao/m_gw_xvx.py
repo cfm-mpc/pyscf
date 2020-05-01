@@ -79,12 +79,12 @@ def gw_xvx_ac_blas(self):
     from pyscf.nao.m_rf0_den import calc_XVX
 
     xvx = []
-    v = np.einsum('pab->apb', self.pb.get_ac_vertex_array())
+    v = np.einsum('pab->apb', self.pb.get_ac_vertex_array(dtype=self.dtype))
 
     for spin in range(self.nspin):
 
         vx = v.dot(self.mo_coeff[0, spin, self.nn[spin], :, 0].T)
-        xvx0 = calc_XVX(self.mo_coeff[0, spin, :, :, 0], vx)
+        xvx0 = calc_XVX(self.mo_coeff[0, spin, :, :, 0], vx, dtype=self.dtype)
 
         xvx.append(xvx0.T)
 
@@ -150,11 +150,11 @@ def gw_xvx_dp(self):
     size = self.cc_da.shape[0]
 
     # dominant product basis: V_{\widetilde{\mu}}^{ab}
-    v_pd  = self.pb.get_dp_vertex_array()
+    v_pd  = self.pb.get_dp_vertex_array(dtype=self.dtype)
 
     # atom_centered functional: C_{\widetilde{\mu}}^{\mu}
     # V_{\mu}^{ab} = V_{\widetilde{\mu}}^{ab} * C_{\widetilde{\mu}}^{\mu}
-    c = self.pb.get_da2cc_den()
+    c = self.pb.get_da2cc_den(dtype=self.dtype)
 
     # First step: transform v_pd in a 2D array
     v_pd1 = v_pd.reshape(v_pd.shape[0]*self.norbs, self.norbs)
@@ -216,8 +216,8 @@ def gw_xvx_dp_ndcoo (self):
     from pyscf.nao import ndcoo
     xvx = []
     size = self.cc_da.shape[0]
-    v_pd  = self.pb.get_dp_vertex_array()
-    c = self.pb.get_da2cc_den()
+    v_pd  = self.pb.get_dp_vertex_array(dtype=self.dtype)
+    c = self.pb.get_da2cc_den(dtype=self.dtype)
     #First step
     data = v_pd.ravel() #v_pd.reshape(-1)
     #i0,i1,i2 = np.mgrid[0:v_pd.shape[0],0:v_pd.shape[1],0:v_pd.shape[2] ].reshape((3,data.size))   #fails in memory

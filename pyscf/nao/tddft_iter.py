@@ -19,18 +19,11 @@ class tddft_iter(chi0_matvec):
 
     Input Parameters:
     -----------------
-      kw: keywords arguments:
-          * tddft_iter_tol (real, default: 1e-3): tolerance to reach for 
-                          convergency in the iterative procedure.
-          * tmp_fname (string, default None): temporary file to save polarizability
-                          at each frequency. Can be a life saver for large systems.
     """
 
     def __init__(self, **kw):
 
         self.load_kernel = load_kernel = kw['load_kernel'] if 'load_kernel' in kw else False
-        self.maxiter = kw['maxiter'] if 'maxiter' in kw else 1000
-        self.tddft_iter_tol = kw['tddft_iter_tol'] if 'tddft_iter_tol' in kw else 1e-3
         self.res_method = kw["res_method"] if "res_method" in kw else "both"
 
         # better to check input before to initialize calculations
@@ -151,14 +144,11 @@ class tddft_iter(chi0_matvec):
         veff_op = splin.LinearOperator((nsp,nsp), matvec=self.vext2veff_matvec,
                                  dtype=self.dtypeComplex)
 
-        resgm, info = splin.lgmres(veff_op, np.require(vext, dtype=self.dtypeComplex,
-                                                 requirements='C'), x0=x0,
-                                   tol=self.tddft_iter_tol,
-                                   atol=self.tddft_iter_tol,
-                                   maxiter=self.maxiter)
+        b = np.require(vext, dtype=self.dtypeComplex, requirements='C')
+        resgm, info = self.krylov_solver(veff_op, b, x0=x0, **self.krylov_options)
 
         if info != 0:
-            print("LGMRES Warning: info = {0}".format(info))
+            print("Krylov Warning: info = {0}".format(info))
     
         return resgm
 

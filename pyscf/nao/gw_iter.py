@@ -37,8 +37,6 @@ class gw_iter(gw):
   def __init__(self, **kw):
     gw.__init__(self, **kw)
 
-    self.gw_iter_tol = kw['gw_iter_tol'] if 'gw_iter_tol' in kw else 1e-4
-    self.maxiter = kw['maxiter'] if 'maxiter' in kw else 1000
     self.gw_xvx_algo = kw['gw_xvx_algo'] if 'gw_xvx_algo' in kw else "ac_blas"
     self.use_preconditioner = kw['use_preconditioner'] if 'use_preconditioner' in kw else False
 
@@ -63,7 +61,7 @@ class gw_iter(gw):
     This computes the correlation part of the screened interaction using LinearOpt and lgmres
     lgmres method is much slower than np.linalg.solve !!
     """
-    from scipy.sparse.linalg import lgmres, LinearOperator 
+    from scipy.sparse.linalg import LinearOperator 
     si0 = np.zeros((ww.size, self.nprod, self.nprod), dtype=self.dtypeComplex)
     k_c_opt = LinearOperator((self.nprod,self.nprod), matvec=self.gw_vext2veffmatvec, dtype=self.dtypeComplex) 
     for iw,w in enumerate(ww):                                 
@@ -73,8 +71,8 @@ class gw_iter(gw):
         k_c = self.kernel_sq[m] 
         b = self.chi0_mv(k_c, self.comega_current) 
         a = self.kernel_sq.dot(b) 
-        si0[iw,m,:],exitCode = lgmres(k_c_opt, a, atol=self.gw_iter_tol, maxiter=self.maxiter)    
-        if exitCode != 0: print("LGMRES has not achieved convergence: exitCode = {}".format(exitCode))
+        si0[iw,m,:],exitCode = self.krylov_solver(k_c_opt, a, **self.krylov_options)    
+        if exitCode != 0: print("Krylov has not achieved convergence: exitCode = {}".format(exitCode))
     return si0
 
   def si_c_check (self, tol = 1e-5):
@@ -220,7 +218,7 @@ class gw_iter(gw):
     """
 
 
-    from scipy.sparse.linalg import LinearOperator, lgmres
+    from scipy.sparse.linalg import LinearOperator
 
     if self.GPU:
         self.initialize_chi0_matvec_GPU()
@@ -237,8 +235,6 @@ class gw_iter(gw):
                              matvec=self.gw_vext2veffmatvec,
                              dtype=self.dtypeComplex)
 
-    # preconditioning could be using 1- kernel
-    # not sure ...
     x0 = None
     if self.use_preconditioner:
         M0 = self.precond_lgmres ()
@@ -271,7 +267,10 @@ class gw_iter(gw):
 
                     else:
                         # v XVX
+                        #print(self.kernel_sq.dtype, self.xvx[s].dtype)
                         a = self.kernel_sq.dot(self.xvx[s][n,m,:])
+                        #print(a.dtype)
+                        #print("start lgmres")
                         
                         # \chi_{0}v XVX by using matrix vector
                         tt1 = timer()
@@ -296,13 +295,12 @@ class gw_iter(gw):
                                     x0 = None
                                 else:
                                     x0 = copy.deepcopy(prev_sol[n, m, :])
-                            sf_aux[n,m,:], exitCode = lgmres(k_c_opt, a,
-                                                              atol=self.gw_iter_tol,
-                                                              maxiter=self.maxiter,
-                                                              x0=x0, M=M0)
+                            sf_aux[n,m,:], exitCode = \
+                                    self.krylov_solver(k_c_opt, a, x0=x0, M=M0,
+                                                       **self.krylov_options)
  
                             if exitCode != 0:
-                              print("LGMRES has not achieved convergence: exitCode = {}".format(exitCode))
+                              print("Krylov solver has not achieved convergence: exitCode = {}".format(exitCode))
                 
 
             t2 = timer()
@@ -378,12 +376,10 @@ class gw_iter(gw):
                              matvec=self.gw_vext2veffmatvec,
                              dtype=self.dtypeComplex)
 
-    from scipy.sparse.linalg import lgmres
-    resgm, info = lgmres(veff_op,
-                         np.require(vext, dtype=self.dtypeComplex, requirements='C'),
-                         atol=self.gw_iter_tol, maxiter=self.maxiter)
+    b = np.require(vext, dtype=self.dtypeComplex, requirements='C')
+    resgm, info = self.krylov_solver(veff_op, b, **self.krylov_options)
     if info != 0:
-      print("LGMRES has not achieved convergence: exitCode = {}".format(info))
+      print("Krylov solver has not achieved convergence: exitCode = {}".format(info))
     return resgm
 
   def check_veff(self, optimize="greedy"):
@@ -471,7 +467,7 @@ class gw_iter(gw):
     iterative procedure
     """
     
-    from scipy.sparse.linalg import lgmres, LinearOperator
+    from scipy.sparse.linalg import LinearOperator
 
     if not hasattr(self, 'xvx'): self.xvx = self.gw_xvx(self.gw_xvx_algo)
 
@@ -507,10 +503,9 @@ class gw_iter(gw):
                 self.time_gw[21] += tt2 - tt1
                 a = self.kernel_sq.dot(b)
 
-                si_xvx, exitCode = lgmres(k_c_opt, a, atol=self.gw_iter_tol,
-                                          maxiter=self.maxiter)#, x0 = prev_sol, M=M0)
+                si_xvx, exitCode = self.krylov_solver(k_c_opt, a, **self.krylov_options)
                 if exitCode != 0:
-                    print("LGMRES has not achieved convergence: exitCode = {}".format(exitCode))
+                    print("Krylov solver has not achieved convergence: exitCode = {}".format(exitCode))
 
                 if self.use_initial_guess_ite_solver:
                     #if nl > 0: print('prev_sol ,si_xvx', (abs(prev_sol - si_xvx).sum()))
@@ -712,7 +707,7 @@ if __name__=='__main__':
     #gw_it = gw.get_snmw2sf_iter(nbnd)
 
     print('Comparison between matrix element of W obtained from gw_iter and gw classes: ', 
-            np.allclose(gw_it, gw_ref, atol= gw.gw_iter_tol)) 
+            np.allclose(gw_it, gw_ref, atol=1.0e-4)) 
     print([abs(gw_it[s]-gw_ref[s]).sum() for s in range(gw.nspin)])  
 
     sn2w = [np.copy(gw.ksn2e[0,s,nn]) for s,nn in enumerate(gw.nn)]
@@ -722,7 +717,7 @@ if __name__=='__main__':
     sn2r_ref = gw.gw_corr_res(sn2w)
     t3 = timer()
     print('Comparison between energies in residue part obtained from gw_iter and gw classes: ',
-            np.allclose(sn2r_it, sn2r_ref, atol= gw.gw_iter_tol))
+            np.allclose(sn2r_it, sn2r_ref, atol=1.0e-4))
     print([abs(sn2r_it[s]-sn2r_ref[s]).sum() for s in range(gw.nspin)])
     print('iter Vs. ref', t2-t1, t3-t2)
     #gw.kernel_gw_iter()

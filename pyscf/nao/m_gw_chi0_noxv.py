@@ -76,7 +76,9 @@ def gw_chi0_mv_gpu(self, dvin, comega=1j*0.0, timing=None):
                                                 sab_re_gpu, sab_im_gpu, comega,
                                                 self.div_numba,
                                                 self.use_numba, timing[4:13],
-                                                GPU=True)
+                                                GPU=True,
+                                                blockspergrid=self.block_size[spin],
+                                                threadsperblock=self.grid_size[spin])
         else:
             matre, matim = get_ab2v(self.xocc_gpu[spin], self.xvrt_gpu[spin],
                                     self.vstart[spin], self.nfermi[spin],
@@ -85,7 +87,8 @@ def gw_chi0_mv_gpu(self, dvin, comega=1j*0.0, timing=None):
                                     sab_re_gpu, sab_im_gpu, comega,
                                     self.div_numba,
                                     self.use_numba, timing[4:13],
-                                    GPU=True)
+                                    GPU=True, blockspergrid=self.block_size[spin],
+                                    threadsperblock=self.grid_size[spin])
             ab2v_re_gpu += matre
             ab2v_im_gpu += matim
 

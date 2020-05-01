@@ -5,6 +5,7 @@ from numpy import array, argmax
 from scipy.sparse import csr_matrix, coo_matrix
 from timeit import default_timer as timer
 from scipy.linalg import blas
+import scipy.sparse.linalg as splin
 
 from pyscf.nao import mf
 from pyscf.nao.m_chi0_noxv import chi0_mv_gpu, chi0_mv
@@ -22,6 +23,27 @@ class chi0_matvec(mf):
             self.use_initial_guess_ite_solver = kw["use_initial_guess_ite_solver"]
         else:
             self.use_initial_guess_ite_solver = False
+
+        krylov_solvers = {"lgmres": splin.lgmres,
+                          "gmres": splin.gmres,
+                          "gcrotmk": splin.gcrotmk,
+                          "qmr": splin.qmr,
+                          "minres": splin.minres,
+                          "bicgstab": splin.bicgstab,
+                          "bicg": splin.bicg,
+                          "cg": splin.cg,
+                          "cgs": splin.cgs}
+        if "krylov_solver" in kw:
+            self.krylov_solver = krylov_solvers[kw["krylov_solver"]]
+        else:
+            self.krylov_solver = krylov_solvers["lgmres"]
+
+        if "krylov_options" in kw:
+            self.krylov_options = kw["krylov_options"]
+        else:
+            self.krylov_options = {"tol": 1.0e-3,
+                                   "atol": 1.0e-3,
+                                   "maxiter": 1000}
 
         mf.__init__(self, **kw)
 
@@ -45,15 +67,22 @@ class chi0_matvec(mf):
 
         assert isinstance(self.eps, float)
 
-        self.div_numba = None
         if self.GPU:
             if not self.use_numba:
                 raise ValueError("GPU calculations require Numba")
-            from pyscf.nao.m_div_eigenenergy_numba import div_eigenenergy_gpu
-            self.div_numba = div_eigenenergy_gpu
+
+            if self.dtype == np.float32:
+                from pyscf.nao.m_div_eigenenergy_numba import div_eigenenergy_gpu_float32
+                self.div_numba = div_eigenenergy_gpu_float32
+            else:
+                from pyscf.nao.m_div_eigenenergy_numba import div_eigenenergy_gpu_float64
+                self.div_numba = div_eigenenergy_gpu_float64
+
         elif self.use_numba:
             from pyscf.nao.m_div_eigenenergy_numba import div_eigenenergy_numba
             self.div_numba = div_eigenenergy_numba
+        else:
+            self.div_numba = None
 
         # deallocate hsx
         if hasattr(self, 'hsx') and self.dealloc_hsx: self.hsx.deallocate()
@@ -114,12 +143,29 @@ class chi0_matvec(mf):
         except RuntimeError as err:
             raise RuntimeError("Could not import cupy: {}".format(err))
 
+        block_size = 32
+        self.block_size = [] # np.array([32, 32], dtype=np.int32) # threads by block
+        self.grid_size = [] #np.array([0, 0], dtype=np.int32) # number of blocks
+
         self.xocc_gpu = []
         self.xvrt_gpu = []
         self.ksn2e_gpu = cp.asarray(self.ksn2e)
         self.ksn2f_gpu = cp.asarray(self.ksn2f)
 
         for spin in range(self.nspin):
+            dimensions = [self.nfermi[spin], self.nprod]
+            self.block_size.append([block_size, block_size])
+            self.grid_size.append([0, 0])
+            for i in range(2):
+                if dimensions[i] <= block_size:
+                    self.block_size[spin][i] = dimensions[i]
+                    self.grid_size[spin][i] = 1
+                else:
+                    self.grid_size[spin][i] = dimensions[i]//self.block_size[spin][i] + 1
+
+            print("spin {}: block_size: ({}, {}); grid_size: ({}, {})".format(
+                spin, self.block_size[spin][0], self.block_size[spin][1],
+                self.grid_size[spin][0], self.grid_size[spin][1]))
             self.xocc_gpu.append(cp.asarray(self.xocc[spin]))
             self.xvrt_gpu.append(cp.asarray(self.xvrt[spin]))
 

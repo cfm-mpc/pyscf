@@ -27,10 +27,10 @@ well described here  http://www.netlib.org/lapack/lug/node123.html
 #
 #
 #
-def pack2den_u(pack):
+def pack2den_u(pack, dtype=np.float64):
   """ Unpacks a packed format to dense format """
   dim = size2dim(len(pack))
-  den = np.zeros((dim,dim))
+  den = np.zeros((dim,dim), dtype=dtype)
   for i in range(dim):
     for j in range(i+1):
       den[i,j] = pack[ij2pack_u(i,j)]
@@ -40,10 +40,10 @@ def pack2den_u(pack):
 #
 #
 #
-def pack2den_l(pack):
+def pack2den_l(pack, dtype=np.float64):
   """ Unpacks a packed format to dense format """
   dim = size2dim(len(pack))
-  den = np.zeros((dim,dim))
+  den = np.zeros((dim,dim), dtype=dtype)
   for j in range(dim):
     for i in range(j,dim):
       den[j,i] = pack[ij2pack_l(i,j,dim)]

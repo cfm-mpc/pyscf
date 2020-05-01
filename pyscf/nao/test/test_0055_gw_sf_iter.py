@@ -20,7 +20,7 @@ class KnowValues(unittest.TestCase):
     sf_it = gwi.get_snmw2sf_iter()
     self.assertEqual(len(sf), len(sf_it))
     self.assertEqual(sf[0].shape, sf_it[0].shape)
-    self.assertTrue(np.allclose(sf, sf_it, atol = gwi.gw_iter_tol))
+    self.assertTrue(np.allclose(sf, sf_it, atol=1.0e-3))
     
     
 if __name__ == "__main__": unittest.main()
