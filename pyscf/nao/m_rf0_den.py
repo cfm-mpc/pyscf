@@ -81,13 +81,13 @@ if use_numba:
       return rf0
 
     @nb.jit(nopython=True, parallel=False)
-    def calc_XVX_numba(X, VX):
+    def calc_XVX_numba(X, VX, dtype=np.float64):
 
-        XVX = np.zeros((VX.shape[1], X.shape[0], VX.shape[2]))
+        XVX = np.zeros((VX.shape[1], X.shape[0], VX.shape[2]), dtype=dtype)
 
         for i in range(XVX.shape[2]):
 
-            XVX[:, :, i] = np.dot(VX[:, :, i].T, X.T)
+            XVX[:, :, i] = VX[:, :, i].T.dot(X.T)
 
         return XVX
 
@@ -263,13 +263,14 @@ def rf0_den_einsum(self, ww):
   
   return rf0
 
-def calc_XVX(X, VX):
+def calc_XVX(X, VX, dtype=np.float64):
 
-    XVX = np.zeros((VX.shape[1], X.shape[0], VX.shape[2]))
+    XVX = np.zeros((VX.shape[1], X.shape[0], VX.shape[2]), dtype=dtype)
 
     for i in range(XVX.shape[2]):
 
-        XVX[:, :, i] = blas.dgemm(1.0, VX[:, :, i], X, trans_a=1, trans_b=1)
+        #XVX[:, :, i] = blas.dgemm(1.0, VX[:, :, i], X, trans_a=1, trans_b=1)
+        XVX[:, :, i] = VX[:, :, i].T.dot(X.T)
 
     return XVX
 
