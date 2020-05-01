@@ -30,7 +30,7 @@ class scf(tddft_iter):
     self.dm_mf   = self.make_rdm1() # necessary to get_hcore(...) in case of pp starting point
 
     if self.gen_pb:
-      self.hkernel_den = pack2den_u(self.kernel)
+      self.hkernel_den = pack2den_u(self.kernel, dtype=self.dtype)
 
     if self.nspin==1:
       self.pyscf_scf = hf.SCF(self)
