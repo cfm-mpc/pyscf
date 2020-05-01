@@ -235,8 +235,6 @@ class gw_iter(gw):
                              matvec=self.gw_vext2veffmatvec,
                              dtype=self.dtypeComplex)
 
-    # preconditioning could be using 1- kernel
-    # not sure ...
     x0 = None
     if self.use_preconditioner:
         M0 = self.precond_lgmres ()
@@ -269,10 +267,7 @@ class gw_iter(gw):
 
                     else:
                         # v XVX
-                        #print(self.kernel_sq.dtype, self.xvx[s].dtype)
                         a = self.kernel_sq.dot(self.xvx[s][n,m,:])
-                        #print(a.dtype)
-                        #print("start lgmres")
                         
                         # \chi_{0}v XVX by using matrix vector
                         tt1 = timer()

@@ -112,14 +112,6 @@ def div_eigenenergy(ksn2e, ksn2f, nf, vs, comega, nm2v_re, nm2v_im,
     if use_numba and div_numba is not None:
         if GPU:
 
-            #print(ksn2e.dtype, ksn2e.shape)
-            #print(ksn2f.dtype, ksn2f.shape)
-            #print(type(nf), type(vs))
-            #print(type(comega.real), type(comega.imag))
-            #print(nm2v_re.dtype, nm2v_re.shape)
-            #print(nm2v_im.dtype, nm2v_im.shape)
-            #import sys
-            #sys.exit()
             div_numba[blockspergrid, threadsperblock](ksn2e, ksn2f,
                                                       nf, vs,
                                                       comega.real,
