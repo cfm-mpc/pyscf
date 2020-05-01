@@ -20,6 +20,7 @@ class scf(tddft_iter):
     self.perform_scf = kw['perform_scf'] if 'perform_scf' in kw else False
     self.kmat_algo = kw['kmat_algo'] if 'kmat_algo' in kw else None
     self.kmat_timing = 0.0 if 'kmat_timing' in kw else None
+    self.SCF_kernel_conv_tol = kw['SCF_kernel_conv_tol'] if 'SCF_kernel_conv_tol' in kw else 1.0e-9 # default Value in pyscf.__config__
 
     for x in ['xc_code', 'dealloc_hsx']: kw.pop(x,None)
     tddft_iter.__init__(self, xc_code='RPA', dealloc_hsx=False, **kw)
@@ -28,25 +29,25 @@ class scf(tddft_iter):
     self.xc_code_kernel = copy(self.xc_code)
     self.xc_code = self.xc_code_mf
     self.dm_mf   = self.make_rdm1() # necessary to get_hcore(...) in case of pp starting point
-
+    
     if self.gen_pb:
       self.hkernel_den = pack2den_u(self.kernel, dtype=self.dtype)
 
     if self.nspin==1:
       self.pyscf_scf = hf.SCF(self)
-      if "SCF_kernel_conv_tol" in kw.keys():
-        self.pyscf_scf.conv_tol = kw["SCF_kernel_conv_tol"]
-      else:
-        self.pyscf_scf.conv_tol = 1.0e-9 # default Value in pyscf.__config__
-    else:
+    elif self.nspin==2:
       self.pyscf_scf = uhf.UHF(self)
-      
+    else:
+      raise ValueError("Number of spin channels is unknown!") 
+  
+    self.pyscf_scf.conv_tol = self.SCF_kernel_conv_tol
     self.pyscf_scf.direct_scf = False # overriding the attributes from hf.SCF ...
     self.pyscf_scf.get_hcore = self.get_hcore
     self.pyscf_scf.get_ovlp = self.get_ovlp
     self.pyscf_scf.get_j = self.get_j
     self.pyscf_scf.get_jk = self.get_jk
     self.pyscf_scf.energy_nuc = self.energy_nuc
+
     if self.perform_scf : self.kernel_scf(**kw)
 
   def kernel_scf(self, dump_chk=False, **kw):

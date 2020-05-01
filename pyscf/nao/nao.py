@@ -122,7 +122,7 @@ class nao():
     """Interpret previous pySCF calculation"""
     from pyscf.lib import logger
 
-    gto = kw['gto']
+    gto = self.gto = kw['gto']
     self.stdout = sys.stdout
     self.symmetry = False
     self.symmetry_subgroup = None

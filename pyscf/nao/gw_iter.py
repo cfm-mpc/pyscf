@@ -56,6 +56,10 @@ class gw_iter(gw):
     # Store the ac product basis if necessary (ac_sparse)
     self.v_pab = None
 
+    for k in kw.keys():
+      if k not in [i for i in self.__dict__.keys() if i[:1] != '_']:
+        print('\n WARNING: given attribute .{} is not defined!'.format(k))
+
   def si_c_iter(self,ww):
     """
     This computes the correlation part of the screened interaction using LinearOpt and lgmres
