@@ -72,15 +72,15 @@ class chi0_matvec(mf):
                 raise ValueError("GPU calculations require Numba")
 
             if self.dtype == np.float32:
-                from pyscf.nao.m_div_eigenenergy_numba import div_eigenenergy_gpu_float32
+                from pyscf.nao.m_div_eigenenergy_numba_gpu import div_eigenenergy_gpu_float32
                 self.div_numba = div_eigenenergy_gpu_float32
 
             else:
-                from pyscf.nao.m_div_eigenenergy_numba import div_eigenenergy_gpu_float64
+                from pyscf.nao.m_div_eigenenergy_numba_gpu import div_eigenenergy_gpu_float64
                 self.div_numba = div_eigenenergy_gpu_float64
-        #elif self.use_numba:
-        #    from pyscf.nao.m_div_eigenenergy_numba import div_eigenenergy_numba
-        #    self.div_numba = div_eigenenergy_numba
+        elif self.use_numba:
+            from pyscf.nao.m_div_eigenenergy_numba import div_eigenenergy_numba
+            self.div_numba = div_eigenenergy_numba
 
         else:
             self.div_numba = None
