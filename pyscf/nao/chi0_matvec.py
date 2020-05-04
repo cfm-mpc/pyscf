@@ -144,7 +144,8 @@ class chi0_matvec(mf):
         except RuntimeError as err:
             raise RuntimeError("Could not import cupy: {}".format(err))
 
-        block_size = 32
+        block_sizes = np.array([32, 64, 128, 256, 512, 1024], dtype=np.int32)
+
         self.block_size = [] # np.array([32, 32], dtype=np.int32) # threads by block
         self.grid_size = [] #np.array([0, 0], dtype=np.int32) # number of blocks
 
@@ -155,10 +156,20 @@ class chi0_matvec(mf):
 
         for spin in range(self.nspin):
             dimensions = [self.nfermi[spin], self.nprod]
-            self.block_size.append([block_size, block_size])
+            self.block_size.append([32, 32])
+            for i in range(2):
+                ibs = 0
+                for bs in block_sizes:
+                    if bs > dimensions[i]:
+                        break
+
+                    ibs += 1
+
+                self.block_size[spin][i] = block_sizes[ibs]
+
             self.grid_size.append([0, 0])
             for i in range(2):
-                if dimensions[i] <= block_size:
+                if dimensions[i] <= block_sizes[0]:
                     self.block_size[spin][i] = dimensions[i]
                     self.grid_size[spin][i] = 1
                 else:
