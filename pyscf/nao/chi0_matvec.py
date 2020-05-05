@@ -165,7 +165,10 @@ class chi0_matvec(mf):
 
                     ibs += 1
 
-                self.block_size[spin][i] = block_sizes[ibs]
+                if ibs > 0:
+                    self.block_size[spin][i] = block_sizes[ibs-1]
+                else:
+                    self.block_size[spin][i] = block_sizes[0]
 
             self.grid_size.append([0, 0])
             for i in range(2):
