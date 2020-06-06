@@ -1,7 +1,15 @@
 Library of tools for Managing the numerical atomic orbitals (NAO)
 ===============================================
 
-2019-12-08
+2020-06-01
+
+WARNING
+-------
+
+PySCF-NAO is depreciated. The code will not received anymore update.
+Please use the new PyNAO code which replace PySCF-NAO.
+https://gitlab.com/mbarbry/pynao
+
 
 Installation
 ------------

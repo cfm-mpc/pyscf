@@ -40,3 +40,18 @@ from .ndcoo import ndcoo
 from .gw_iter import gw_iter
 
 __version__ = "0.1.0"
+
+mess = """
+
+*************************
+*                       *
+*       WARNING         *
+*                       *
+*************************
+
+PySCF-NAO is depreciated. The code will not received anymore update.
+Please use the new PyNAO code which replace PySCF-NAO.
+https://gitlab.com/mbarbry/pynao
+"""
+
+print(mess)
